@@ -1,0 +1,11 @@
+Source: @package_name@
+Section: non-free/otherosfs
+Priority: optional
+Maintainer: @packager@
+Build-Depends: debhelper (>= 3.0), fakeroot
+Standards-Version: 3.7.3.0
+
+Package: @package_name@
+Depends: @product_id@20 | @product_id@5 | @product_id@5:i386
+Architecture: all
+Description:  @description@

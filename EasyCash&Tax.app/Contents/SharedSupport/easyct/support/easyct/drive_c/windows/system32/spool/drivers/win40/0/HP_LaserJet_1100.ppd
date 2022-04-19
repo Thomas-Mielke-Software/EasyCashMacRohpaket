@@ -1,0 +1,142 @@
+*PPD-Adobe: "4.3"
+*% PPD created by ipp2ppd (v2:Feb 22 2019)
+*FormatVersion: "4.3"
+*FileVersion: "2.0"
+*LanguageVersion: English
+*LanguageEncoding: ISOLatin1
+*PSVersion: "(3010.000) 0"
+*LanguageLevel: "3"
+*FileSystem: False
+*cupsVersion: 2.0
+*cupsModelNumber: 0
+*cupsSNMPSupplies: False
+*APAirPrint: True
+*APAirPrintVersion: 1.1
+*APURFVersion: 1.1
+*% WARNING missing printer-firmware-name and/or printer-firmware-string-version.
+*cupsLanguages: "en"
+*APPrinterIconPath: "/Library/Printers/Icons/HP LaserJet 1100 _ CUPS_Gutenprint v5_3_1.icns"
+*PCFileName: "APHPLASE.PPD"
+*ModelName: "HP LaserJet 1100 - CUPS+Gutenprint v5.3.1"
+*Product: (HP LaserJet 1100 - CUPS+Gutenprint v5.3.1)
+*ShortNickName: "HP LaserJet 1100 - CUPS+Gutenprint v5.3.1"
+*Manufacturer: "HP"
+*NickName: "HP LaserJet 1100 - CUPS+Gutenprint v5.3.1-AirPrint"
+*Throughput: 1
+*cupsSingleFile: True
+*cupsFilter2: "application/vnd.cups-pdf application/pdf 0 maxsize(7521976320) -"
+*cupsFilter: "application/vnd.cups-pdf 0 -"
+*cupsFilter2: "image/jpeg image/jpeg 0 maxsize(7521976320) -"
+*cupsFilter: "image/jpeg 0 -"
+*cupsFilter2: "image/urf image/urf 10 -"
+*cupsFilter: "image/urf 10 -"
+*cupsMaxCopies: 9999
+*OpenUI *Collate: PickOne
+*OrderDependency: 10 AnySetup *Collate
+*DefaultCollate: False
+*Collate True: "<</Collate true>>setpagedevice"
+*Collate False: "<</Collate false>>setpagedevice"
+*CloseUI: *Collate
+*ColorDevice: False
+*APColorSpaces: true
+*DefaultColorSpace: Gray
+*cupsICCProfile Gray../Grayscale: "/System/Library/ColorSync/Profiles/Generic Gray Gamma 2.2 Profile.icc"
+*OpenUI *ColorModel/Color Mode: PickOne
+*OrderDependency: 10 AnySetup *ColorModel
+*DefaultColorModel: Gray
+*ColorModel Gray/Grayscale: "<</cupsColorSpace 18/cupsBitsPerColor 8/cupsColorOrder 0/cupsCompression 0>>setpagedevice"
+*CloseUI: *ColorModel
+*% WARNING required landscape-orientation-requested-preferred not found. Using default
+*LandscapeOrientation: Plus90
+*% WARNING no URF supported resolutions found.
+*DefaultResolution: 300x300dpi
+*OpenUI *cupsPrintQuality/Quality: PickOne
+*OrderDependency: 10 AnySetup *cupsPrintQuality
+*DefaultcupsPrintQuality: Normal
+*cupsPrintQuality Normal: "<</cupsInteger1 4 /HWResolution[300 300]>>setpagedevice"
+*cupsPrintQuality High: "<</cupsInteger1 5 /HWResolution[300 300]>>setpagedevice"
+*CloseUI: *cupsPrintQuality
+*cupsBackSide: Normal
+*OpenUI *Duplex/2-Sided Printing: PickOne
+*OrderDependency: 10 AnySetup *Duplex
+*DefaultDuplex: DuplexNoTumble
+*Duplex None/Off (1-Sided): "<</Duplex false>>setpagedevice"
+*Duplex DuplexNoTumble/Long-Edge (Portrait): "<</Duplex true/Tumble false>>setpagedevice"
+*Duplex DuplexTumble/Short-Edge (Landscape): "<</Duplex true/Tumble true>>setpagedevice"
+*CloseUI: *Duplex
+*DefaultOutputOrder: Normal
+*% WARNING required landscape-orientation-requested-preferred not found. Using default
+*OpenUI *PageSize/Media Size: PickOne
+*OrderDependency: 10 AnySetup *PageSize
+*DefaultPageSize: A4
+*PageSize A4: "<</PageSize[594.9921 842.0031]/ImagingBBox null/Orientation 0>>setpagedevice"
+*PageSize Env10: "<</PageSize[297.0142 684.0000]/ImagingBBox null/Orientation 0>>setpagedevice"
+*PageSize EnvC5: "<</PageSize[459.0142 648.9921]/ImagingBBox null/Orientation 0>>setpagedevice"
+*PageSize EnvC6: "<</PageSize[323.0079 459.0142]/ImagingBBox null/Orientation 0>>setpagedevice"
+*PageSize EnvDL: "<</PageSize[310.9890 622.9984]/ImagingBBox null/Orientation 0>>setpagedevice"
+*PageSize EnvMonarch: "<</PageSize[279.0142 540.0000]/ImagingBBox null/Orientation 0>>setpagedevice"
+*PageSize Executive: "<</PageSize[522.0000 756.0000]/ImagingBBox null/Orientation 0>>setpagedevice"
+*PageSize Legal: "<</PageSize[612.0000 1008.0000]/ImagingBBox null/Orientation 0>>setpagedevice"
+*PageSize Letter: "<</PageSize[612.0000 792.0000]/ImagingBBox null/Orientation 0>>setpagedevice"
+*PageSize Statement: "<</PageSize[396.0000 612.0000]/ImagingBBox null/Orientation 0>>setpagedevice"
+*CloseUI: *PageSize
+*OpenUI *PageRegion/Media Size: PickOne
+*OrderDependency: 10 AnySetup *PageRegion
+*DefaultPageRegion: A4
+*PageRegion A4: "<</PageSize[594.9921 842.0031]/ImagingBBox null/Orientation 0>>setpagedevice"
+*PageRegion Env10: "<</PageSize[297.0142 684.0000]/ImagingBBox null/Orientation 0>>setpagedevice"
+*PageRegion EnvC5: "<</PageSize[459.0142 648.9921]/ImagingBBox null/Orientation 0>>setpagedevice"
+*PageRegion EnvC6: "<</PageSize[323.0079 459.0142]/ImagingBBox null/Orientation 0>>setpagedevice"
+*PageRegion EnvDL: "<</PageSize[310.9890 622.9984]/ImagingBBox null/Orientation 0>>setpagedevice"
+*PageRegion EnvMonarch: "<</PageSize[279.0142 540.0000]/ImagingBBox null/Orientation 0>>setpagedevice"
+*PageRegion Executive: "<</PageSize[522.0000 756.0000]/ImagingBBox null/Orientation 0>>setpagedevice"
+*PageRegion Legal: "<</PageSize[612.0000 1008.0000]/ImagingBBox null/Orientation 0>>setpagedevice"
+*PageRegion Letter: "<</PageSize[612.0000 792.0000]/ImagingBBox null/Orientation 0>>setpagedevice"
+*PageRegion Statement: "<</PageSize[396.0000 612.0000]/ImagingBBox null/Orientation 0>>setpagedevice"
+*CloseUI: *PageRegion
+*DefaultImageableArea: A4
+*DefaultPaperDimension: A4
+*PaperDimension A4: "594.9921 842.0031"
+*ImageableArea A4: "10.0063 11.9906 584.9858 830.0126"
+*PaperDimension Env10: "297.0142 684.0000"
+*ImageableArea Env10: "18.0000 11.9906 279.0142 672.0094"
+*PaperDimension EnvC5: "459.0142 648.9921"
+*ImageableArea EnvC5: "18.0000 11.9906 441.0142 637.0016"
+*PaperDimension EnvC6: "323.0079 459.0142"
+*ImageableArea EnvC6: "18.0000 11.9906 305.0079 447.0236"
+*PaperDimension EnvDL: "310.9890 622.9984"
+*ImageableArea EnvDL: "18.0000 11.9906 292.9890 611.0079"
+*PaperDimension EnvMonarch: "279.0142 540.0000"
+*ImageableArea EnvMonarch: "18.0000 11.9906 261.0142 528.0094"
+*PaperDimension Executive: "522.0000 756.0000"
+*ImageableArea Executive: "18.0000 11.9906 504.0000 744.0094"
+*PaperDimension Legal: "612.0000 1008.0000"
+*ImageableArea Legal: "18.0000 11.9906 594.0000 996.0094"
+*PaperDimension Letter: "612.0000 792.0000"
+*ImageableArea Letter: "18.0000 11.9906 594.0000 780.0094"
+*PaperDimension Statement: "396.0000 612.0000"
+*ImageableArea Statement: "18.0000 11.9906 378.0000 600.0094"
+*OpenUI *InputSlot: PickOne
+*OrderDependency: 10 AnySetup *InputSlot
+*% WARNING unrecognized media-source ignored: standard
+*% WARNING unrecognized media-source ignored: manual-adj
+*InputSlot manual/Manual Feed: ""
+*InputSlot by-pass-tray/Multi-Purpose Tray: ""
+*InputSlot by-pass-tray/Multi-Purpose Tray: ""
+*InputSlot top/Top Tray: ""
+*InputSlot top/Top Tray: ""
+*InputSlot bottom/Bottom Tray: ""
+*InputSlot bottom/Bottom Tray: ""
+*% WARNING unrecognized media-source ignored: large-capacity-adj
+*InputSlot large-capacity/Large Capacity Tray: ""
+*DefaultInputSlot: Unknown
+*CloseUI: *InputSlot
+*APPrinterPreset Gray_with_Paper_Auto-Detect/Black and White: "
+	*cupsPrintQuality Normal
+	*ColorModel Gray
+	*Duplex DuplexNoTumble
+	com.apple.print.preset.graphicsType General
+	com.apple.print.preset.quality mid
+	com.apple.print.preset.media-front-coating autodetect
+	com.apple.print.preset.output-mode monochrome"
+*End

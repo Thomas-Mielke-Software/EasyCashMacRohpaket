@@ -1,0 +1,5 @@
+@package_name@ (@package_version@-@release@) unstable; urgency=low
+
+  * New @package_name@ package.
+
+ -- @packager@  @date@

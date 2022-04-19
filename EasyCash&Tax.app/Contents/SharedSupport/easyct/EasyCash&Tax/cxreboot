@@ -1,0 +1,186 @@
+#!/usr/bin/perl
+# (c) Copyright 2003-2007, 2010, 2012. CodeWeavers, Inc.
+use warnings;
+use strict;
+
+
+# Portable which(1) implementation
+sub cxwhich($$;$)
+{
+    my ($dirs, $app, $noexec)=@_;
+    if ($app =~ /^\//)
+    {
+        return $app if ((-x $app or $noexec) and -f $app);
+    }
+    elsif ($app =~ /\//)
+    {
+        require Cwd;
+        my $path=Cwd::cwd() . "/$app";
+        return $path if ((-x $path or $noexec) and -f $path);
+    }
+    else
+    {
+        foreach my $dir (split /:/, $dirs)
+        {
+            return "$dir/$app" if ($dir ne "" and (-x "$dir/$app" or $noexec) and -f "$dir/$app");
+        }
+    }
+    return undef;
+}
+
+# Fast dirname() implementation
+sub _cxdirname($)
+{
+    my ($path)=@_;
+    return undef if (!defined $path);
+    return "." if ($path !~ s!/+[^/]+/*$!!s);
+    return "/" if ($path eq "");
+    return $path;
+}
+
+# Locate where CrossOver is installed by looking for the directory
+# where the cxmenu script is located, unwinding symlinks on the way
+sub locate_cx_root(;$)
+{
+    my ($fallback)=@_;
+    my $argv0=cxwhich($ENV{PATH},$0);
+    $argv0=$0 if (!defined $argv0);
+    if ($argv0 !~ m+^/+)
+    {
+        require Cwd;
+        $argv0=Cwd::cwd() . "/$argv0";
+    }
+    my $dir=_cxdirname($argv0);
+    my $bindir=$dir;
+    $bindir =~ s%/lib$%/bin%;
+    while (!-x "$bindir/cxmenu" or !-f "$bindir/cxmenu")
+    {
+        last if (!-l $argv0);
+        $argv0=readlink($argv0);
+        $argv0="$dir/$argv0" if ($argv0 !~ m+^/+);
+        $dir=_cxdirname($argv0);
+        $bindir=$dir;
+        $bindir =~ s%/lib$%/bin%;
+    }
+    $bindir =~ s%/(?:\./)+%/%g;
+    $bindir =~ s%/\.$%%;
+    $ENV{CX_ROOT}=_cxdirname($bindir);
+    if ((!-x "$ENV{CX_ROOT}/bin/cxmenu" or !-f "$ENV{CX_ROOT}/bin/cxmenu") and
+        $fallback)
+    {
+        $ENV{CX_ROOT}=$fallback;
+    }
+    if (!-x "$ENV{CX_ROOT}/bin/cxmenu" or !-f "$ENV{CX_ROOT}/bin/cxmenu")
+    {
+        my $name0=$0;
+        $name0 =~ s+^.*/++;
+        print STDERR "$name0:error: could not find CrossOver in '$ENV{CX_ROOT}'\n";
+        exit 1;
+    }
+    return $ENV{CX_ROOT};
+}
+
+BEGIN {
+    unshift @INC, locate_cx_root() . "/lib/perl";
+}
+use CXLog;
+use CXUtils;
+
+
+# Process command-line options
+my $opt_bottle=$ENV{CX_BOTTLE} || "default";
+my $opt_scope;
+my $opt_verbose;
+my $opt_help;
+require CXOpts;
+my $cxopts=CXOpts->new();
+$cxopts->add_options(["bottle=s"    => \$opt_bottle,
+                      "scope=s"     => \$opt_scope,
+                      "verbose!"    => \$opt_verbose,
+                      "?|h|help"    => \$opt_help
+                     ]);
+my $err=$cxopts->parse();
+CXLog::fdopen(2) if ($opt_verbose);
+$ENV{CX_BOTTLE}=$opt_bottle;
+
+
+# Validate the command line options
+my $usage;
+if ($err)
+{
+    cxerr("$err\n");
+    $usage=2;
+}
+elsif ($opt_help)
+{
+    $usage=0;
+}
+else
+{
+    if (defined $opt_scope)
+    {
+        $opt_scope=~ tr/A-Z/a-z/;
+        if ($opt_scope !~ /^(managed|private)$/)
+        {
+            cxerr("unknown scope value '$opt_scope'\n");
+            $usage=2;
+        }
+    }
+}
+
+
+# Determine and check wineprefix
+my $cxconfig;
+if (!defined $usage)
+{
+    require CXBottle;
+    $cxconfig=CXBottle::get_crossover_config();
+
+    my ($scope)=CXBottle::setup_bottle_wineprefix($opt_scope);
+    if (!defined $scope)
+    {
+        cxerr("cannot use the '$ENV{CX_BOTTLE}' bottle: $@\n");
+        $usage=1;
+    }
+}
+
+
+# Print usage
+if (defined $usage)
+{
+    my $name0=cxname0();
+    if ($usage)
+    {
+        cxerr("try '$name0 --help' for more information\n");
+        exit $usage;
+    }
+    print "Usage: $name0 [--bottle BOTTLE] [--scope SCOPE] [--verbose] [--help]\n";
+
+    print "\n";
+    print "Simulates a Windows reboot without impacting running Windows applications.\n";
+
+    print "\n";
+    print "Options:\n";
+    print "  --bottle BOTTLE Specifies the name of the bottle to reboot\n";
+    print "  --scope SCOPE   If set to managed, the bottle will be looked up in the\n";
+    print "                  system-wide bottle locations, otherwise it will refer to a\n";
+    print "                  private bottle\n";
+    print "  --verbose       Print more information about what is going on\n";
+    print "  --help, -h      Shows this help message\n";
+    exit 0;
+}
+
+my $pid=cxwait(0, "--title", "Reboot",
+               "--image", "cxreboot",
+               "Simulating Windows reboot...");
+
+cxsystem("$ENV{CX_ROOT}/bin/wine", "--wl-app", "reboot.exe");
+
+kill(15,$pid) if (defined $pid);
+cxexec("$ENV{CX_ROOT}/bin/cxmessage",
+       "-title","Reboot",
+       "-buttons","OK",
+       "-default","OK",
+       "-image","cxreboot",
+       "Simulating Windows reboot... Done.");
+exit 0;

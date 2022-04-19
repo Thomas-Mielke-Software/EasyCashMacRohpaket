@@ -1,0 +1,29 @@
+#!/bin/sh
+# (c) Copyright 2008. CodeWeavers, Inc.
+
+# Setup logging
+if [ -n "$CX_LOG" ]
+then
+    [ "$CX_LOG" = "-" ] || exec 2>>"$CX_LOG"
+    echo >&2
+    echo "***** `date`" >&2
+    echo "Starting: $0 $@" >&2
+    set -x
+fi
+
+action="$1"
+
+CX_ROOT="/opt/@product_id@"
+CX_BOTTLE="@bottle@"
+export CX_ROOT CX_BOTTLE
+
+if [ "$action" = "purge" ]
+then
+    # Delete any leftover file
+    rm -rf "$CX_ROOT/support/$CX_BOTTLE"
+fi
+
+# Make sure the script returns 0
+true
+
+#DEBHELPER#

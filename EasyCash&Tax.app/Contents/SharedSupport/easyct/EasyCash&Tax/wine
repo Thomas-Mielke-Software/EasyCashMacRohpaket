@@ -1,0 +1,1211 @@
+#!/usr/bin/perl
+# (c) Copyright 2001-2018. CodeWeavers, Inc.
+use warnings;
+use strict;
+my $ldpath_envname="DYLD_LIBRARY_PATH";
+
+
+# Portable which(1) implementation
+sub cxwhich($$;$)
+{
+    my ($dirs, $app, $noexec)=@_;
+    if ($app =~ /^\//)
+    {
+        return $app if ((-x $app or $noexec) and -f $app);
+    }
+    elsif ($app =~ /\//)
+    {
+        require Cwd;
+        my $path=Cwd::cwd() . "/$app";
+        return $path if ((-x $path or $noexec) and -f $path);
+    }
+    else
+    {
+        foreach my $dir (split /:/, $dirs)
+        {
+            return "$dir/$app" if ($dir ne "" and (-x "$dir/$app" or $noexec) and -f "$dir/$app");
+        }
+    }
+    return undef;
+}
+
+# Fast dirname() implementation
+sub _cxdirname($)
+{
+    my ($path)=@_;
+    return undef if (!defined $path);
+    return "." if ($path !~ s!/+[^/]+/*$!!s);
+    return "/" if ($path eq "");
+    return $path;
+}
+
+# Locate where CrossOver is installed by looking for the directory
+# where the cxmenu script is located, unwinding symlinks on the way
+sub locate_cx_root(;$)
+{
+    my ($fallback)=@_;
+    my $argv0=cxwhich($ENV{PATH},$0);
+    $argv0=$0 if (!defined $argv0);
+    if ($argv0 !~ m+^/+)
+    {
+        require Cwd;
+        $argv0=Cwd::cwd() . "/$argv0";
+    }
+    my $dir=_cxdirname($argv0);
+    my $bindir=$dir;
+    $bindir =~ s%/lib$%/bin%;
+    while (!-x "$bindir/cxmenu" or !-f "$bindir/cxmenu")
+    {
+        last if (!-l $argv0);
+        $argv0=readlink($argv0);
+        $argv0="$dir/$argv0" if ($argv0 !~ m+^/+);
+        $dir=_cxdirname($argv0);
+        $bindir=$dir;
+        $bindir =~ s%/lib$%/bin%;
+    }
+    $bindir =~ s%/(?:\./)+%/%g;
+    $bindir =~ s%/\.$%%;
+    $ENV{CX_ROOT}=_cxdirname($bindir);
+    if ((!-x "$ENV{CX_ROOT}/bin/cxmenu" or !-f "$ENV{CX_ROOT}/bin/cxmenu") and
+        $fallback)
+    {
+        $ENV{CX_ROOT}=$fallback;
+    }
+    if (!-x "$ENV{CX_ROOT}/bin/cxmenu" or !-f "$ENV{CX_ROOT}/bin/cxmenu")
+    {
+        my $name0=$0;
+        $name0 =~ s+^.*/++;
+        print STDERR "$name0:error: could not find CrossOver in '$ENV{CX_ROOT}'\n";
+        exit 1;
+    }
+    return $ENV{CX_ROOT};
+}
+
+BEGIN {
+    unshift @INC, locate_cx_root() . "/lib/perl";
+}
+use CXLog;
+use CXUtils;
+
+
+# Process command-line options
+my $opt_bottle;
+my $opt_scope;
+my $arg_app;
+my $opt_update_only;
+my $ux_app;
+my $cx_app;
+my $wl_app;
+my $wl32_app;
+my $cx_hooks;
+my $opt_start;
+my $opt_start_only;
+my $opt_start_default;
+my $opt_start_mime;
+my $opt_start_class;
+my $opt_start_verb;
+my $opt_wait_all;
+my $opt_check;     # For backward compatibility
+my $opt_desktop;
+my $opt_workdir;
+my $opt_convert;
+my $opt_quotes;
+my $opt_lock;
+my $opt_update;
+my $opt_display;
+my $opt_gui=1;
+my $opt_new_console;
+my $opt_allow_root;# For backward compatibility
+my $opt_wait;
+my $opt_wait_children;
+my $opt_untrusted;
+my $opt_verbose=1 if (CXLog::is_on());
+my $opt_cx_log;
+my $opt_debugmsg=$ENV{CX_DEBUGMSG};
+my $opt_dlloverrides;
+my $opt_dashdash;
+my $opt_winver;
+my $opt_version;
+my $opt_help;
+my $opt_demo_status;
+my $opt_demo_nag;
+my $opt_enable_alt_loader;
+require CXOpts;
+my $cxopts=CXOpts->new(["stop_on_unknown","stop_on_non_option"]);
+$cxopts->add_options(["bottle=s"      => \$opt_bottle,
+                      "scope=s"       => \$opt_scope,
+                      "update-only"   => \$opt_update_only,
+                      "ux-app=s"      => \$ux_app,
+                      "cx-app=s"      => \$cx_app,
+                      "wl-app=s"      => \$wl_app,
+                      "wl32-app=s"    => \$wl32_app,
+                      "cx-hooks=s"    => \$cx_hooks,
+                      "start=s"       => \$opt_start,
+                      "start-only=s"  => \$opt_start_only,
+                      "start-default=s" => \$opt_start_default,
+                      "start-mime=s"  => \$opt_start_mime,
+                      "start-class=s" => \$opt_start_class,
+                      "start-verb=s"  => \$opt_start_verb,
+                      "desktop=s"     => \$opt_desktop,
+                      "workdir=s"     => \$opt_workdir,
+                      "convert!"      => \$opt_convert,
+                      "quotes!"       => \$opt_quotes,
+                      "lock!"         => \$opt_lock,
+                      "update!"       => \$opt_update,
+                      "check"         => \$opt_check,
+                      "allow-root!"   => \$opt_allow_root,
+                      "untrusted!"    => \$opt_untrusted,
+                      "debugmsg=s"    => \$opt_debugmsg,
+                      "dll=s"         => \$opt_dlloverrides,
+                      "winver=s"      => \$opt_winver,
+                      "wait!"         => \$opt_wait,
+                      "wait-children" => \$opt_wait_children,
+                      "wait-all"      => \$opt_wait_all,
+                      "display=s"     => \$opt_display,
+                      "gui!"          => \$opt_gui,
+                      "new-console"   => \$opt_new_console,
+                      "verbose!"      => \$opt_verbose,
+                      "cx-log=s"      => \$opt_cx_log,
+                      ""              => \$opt_dashdash,
+                      "version"       => \$opt_version,
+                      "demo-status"   => \$opt_demo_status,
+                      "demo-nag"      => \$opt_demo_nag,
+                      "enable-alt-loader=s" => \$opt_enable_alt_loader,
+                      "?|h|help"      => \$opt_help
+                     ]);
+my $err=$cxopts->parse();
+if ($opt_verbose)
+{
+    CXLog::fdopen(2);
+    $opt_cx_log="-" if (!defined $opt_cx_log);
+}
+
+my $default_warning;
+if (!defined $opt_bottle and !defined $ENV{CX_BOTTLE})
+{
+    $opt_bottle="default";
+}
+$ENV{CX_BOTTLE}=$opt_bottle if (defined $opt_bottle);
+
+# Validate the command line options
+my $usage;
+if ($err)
+{
+    cxerr("$err\n");
+    $usage=2;
+}
+elsif ($opt_help)
+{
+    $usage=0;
+}
+elsif ($opt_version)
+{
+    $usage=3;
+}
+else
+{
+    if (cxname0() eq "cxstart")
+    {
+        if (defined $opt_start)
+        {
+            cxerr("--start cannot be used with cxstart\n");
+            $usage=2;
+        }
+        elsif (!@ARGV)
+        {
+            cxerr("you must specify the document to open with cxstart\n");
+            $usage=2;
+        }
+        else
+        {
+            $opt_start=shift @ARGV;
+        }
+    }
+    if (!defined $opt_cx_log)
+    {
+        $opt_cx_log = "-";
+        $opt_debugmsg="-all" if (!defined $opt_debugmsg);
+    }
+    elsif ($opt_cx_log eq "/dev/null" and !defined $ux_app)
+    {
+        # No point sending traces to /dev/null
+        $opt_debugmsg = "-all";
+    }
+
+    $ENV{DISPLAY}=$opt_display if (defined $opt_display);
+    $ENV{CX_DEBUGMSG}=$opt_debugmsg if (defined $opt_debugmsg);
+
+    my $cmd_count=0;
+    $cmd_count++ if (defined $opt_update_only);
+    $cmd_count++ if (defined $ux_app);
+    $cmd_count++ if (defined $cx_app);
+    $cmd_count++ if (defined $wl_app);
+    $cmd_count++ if (defined $wl32_app);
+    $cmd_count++ if (defined $cx_hooks);
+    $cmd_count++ if (defined $opt_start);
+    $cmd_count++ if (defined $opt_wait_all);
+    $cmd_count++ if (defined $opt_demo_status);
+    $cmd_count++ if (defined $opt_demo_nag);
+    if ((@ARGV or $cmd_count > 1) and ($opt_demo_status or $opt_demo_nag))
+    {
+        cxerr("--demo-status and --demo-nag must be used alone\n");
+        $usage=2;
+    }
+    elsif ($cmd_count>1)
+    {
+        cxerr("--cx-app, --ux-app, --wl-app, --wl32-app, --cx-hooks, --start, --wait-all and --update-only are mutually exclusive\n");
+        $usage=2;
+    }
+    elsif ($cmd_count == 0)
+    {
+        if (cxname0() ne "wine")
+        {
+            $arg_app=cxname0();
+        }
+        else
+        {
+            if (!@ARGV)
+            {
+                cxerr("you must specify an application to run\n");
+                $usage=2;
+            }
+            elsif (!$opt_dashdash and @ARGV > 1 and $ARGV[1] eq "--")
+            {
+                splice @ARGV, 1, 1;
+            }
+        }
+    }
+    if (!defined $opt_wait)
+    {
+        $opt_wait=1;
+    }
+    elsif (defined $opt_wait_children)
+    {
+        cxerr("--wait and --wait-children are mutually incompatible\n");
+        $usage=2;
+    }
+    if (defined $opt_start)
+    {
+        my $start_count=0;
+        $start_count++ if (defined $opt_start_default);
+        $start_count++ if (defined $opt_start_mime);
+        $start_count++ if (defined $opt_start_class);
+        if ($start_count > 1)
+        {
+            cxerr("--start-default, --start-mime and --start-class are mutually incompatible\n");
+            $usage=2;
+        }
+    }
+    elsif (defined $opt_start_only or defined $opt_start_default or
+           defined $opt_start_mime or defined $opt_start_class or
+           defined $opt_start_verb)
+    {
+        cxerr("--start-only, --start-default, --start-mime, --start-class and --start-verb can only be used with --start\n");
+        $usage=2;
+    }
+    if (defined $opt_scope)
+    {
+        $opt_scope=~ tr/A-Z/a-z/ ;
+        if ($opt_scope !~ /^(?:managed|private)$/)
+        {
+            cxerr("unknown scope value '$opt_scope'\n");
+            $usage=2;
+        }
+    }
+    if (defined $ux_app or defined $cx_hooks)
+    {
+        if (defined $opt_convert or defined $opt_quotes)
+        {
+            cxerr("--convert and --quotes are incompatible with --ux-app and --cx-hooks\n");
+            $usage=2;
+        }
+    }
+    else
+    {
+        $opt_convert=1 if (!defined $opt_convert);
+        $opt_quotes=1 if (!defined $opt_quotes);
+    }
+    $opt_lock=1 if (!defined $opt_lock);
+    $opt_update=1 if (!defined $opt_update and $opt_update_only);
+    $opt_update=1 if (!defined $opt_update and $opt_lock);
+    if (!$opt_update and $opt_update_only)
+    {
+        cxerr("--no-update cannot be used with --update-only\n");
+        $usage=2;
+    }
+    if ($opt_update and !$opt_lock)
+    {
+        cxerr("--update cannot be used with --no-lock\n");
+        $usage=2;
+    }
+    if ($opt_update_only and !$opt_lock)
+    {
+        cxerr("--update-only cannot be used with --no-lock\n");
+        $usage=2;
+    }
+}
+
+sub get_template_directory($)
+{
+    require CXBottle;
+    my $dir=CXBottle::get_template_directory($_[0]);
+    if (!defined $dir)
+    {
+        cxerr("unsupported template type for bottle '$ENV{CX_BOTTLE}'\n");
+        exit 1;
+    }
+    return $dir;
+}
+
+sub fatal_error(@)
+{
+    if ($opt_gui)
+    {
+        cxmessage("-title", "Fatal Error",
+                  "-buttons", "OK",
+                  "-default", "OK",
+                  "-image", "crossover",
+                  @_);
+    }
+    else
+    {
+        cxerr(sprintf($_[0], splice(@_, 1)));
+    }
+    exit 1;
+}
+
+# Scan for viruses and/or warn about running untrusted files (attachments)
+sub check_file($$$$$)
+{
+    my ($cxconfig, $untrusted, $mode, $win_file, $filename)=@_;
+
+    if (!defined $cxconfig)
+    {
+        require CXBottle;
+        $cxconfig=CXBottle::get_crossover_config();
+        $cxconfig->read("$ENV{WINEPREFIX}/cxbottle.conf");
+    }
+
+    my $avscan=$cxconfig->get("CrossOver", "AntiVirusScan", "start");
+    if (($avscan eq "start" and ($untrusted or $win_file)) or
+        ($avscan eq "untrusted" and $untrusted))
+    {
+        my $cmd=shquote_string("$ENV{CX_ROOT}/bin/cxavscan") . " " .
+                ($opt_gui ? "--gui " : "") . shquote_string($filename);
+        my $output=cxbackquote($cmd);
+        return if ($? == 0);   # No virus found
+        exit 1 if ($? == 256); # Found a virus -> abort
+        exit 2 if ($? == 512); # The antivirus does not work
+        # No antivirus scanner was available, continue the regular checks
+    }
+    return if (!$untrusted);
+
+    my $tmp=$ENV{TMPDIR} || "/tmp";
+    $tmp =~ s!/+!/!g;
+    $tmp =~ s!/$!!;
+    $filename =~ s!/+!/!g;
+    return if ($filename !~ m%^\Q$tmp\E/%);
+
+    my $allow_untrusted=$cxconfig->get("Bottle", "AllowUntrusted");
+    return if ($allow_untrusted);
+    exit 1 if (!$opt_gui);
+
+    my $rc=cxmessage(
+        "-title", "CrossOver Security Warning",
+        "-buttons", "Continue:0,Always Continue:2,Abort:3",
+        "-default", "Abort",
+        "-image", "crossover",
+        "-named-args",
+        "You are about to run a Windows application or open a " .
+        "document which appears to come from an untrusted " .
+        "source (most likely an email attachment):\n" .
+        "\n" .
+        "\%(filename)s\n" .
+        "\n" .
+        "If this is a virus, running it could put your " .
+        "computer at risk.\n" .
+        "Click on 'Abort' to stop the launch process before any " .
+        "harm has been done. Click on 'Continue' to open the above " .
+        "application or document, or click on 'Always Continue' to " .
+        "continue and not get asked this question again.", "filename", $filename);
+    if ($rc == 512)
+    {
+        my $lock=CXBottle::lock_bottle($ENV{WINEPREFIX});
+        require CXRWConfig;
+        my $filename="$ENV{WINEPREFIX}/cxbottle.conf";
+        my $cxrwconfig=CXRWConfig->new($filename);
+        $cxrwconfig->set("Bottle", "AllowUntrusted", "1");
+        if ($mode eq "stub" and -l $filename)
+        {
+            # Break the stub's symbolic link so we can save the change
+            unlink $filename;
+        }
+        if (!$cxrwconfig->save())
+        {
+            cxwarn("unable to save '$ENV{WINEPREFIX}/cxbottle.conf': $!\n");
+        }
+        CXUtils::cxunlock($lock);
+    }
+    elsif ($rc != 0)
+    {
+        exit 2;
+    }
+}
+
+sub get_updater($)
+{
+    my ($cxconfig)=@_;
+    my $updater=expand_string($cxconfig->get("Bottle", "Updater"));
+    if (!$updater)
+    {
+        $updater=$cxconfig->get("Default", "WinePrefixCreate");
+        if (defined $updater)
+        {
+            $updater =~ s/wineprefixcreate\.sh$/wineprefixcreate/;
+            $updater =~ s/^.*wineprefixfronskel$//;
+        }
+    }
+    return $updater;
+}
+
+sub prepend_env_path($$)
+{
+    my ($name, $prefix)=@_;
+    my $path=$ENV{$name};
+    if (!defined $path or $path eq "")
+    {
+        $ENV{$name}=$prefix;
+    }
+    elsif ($path !~ /^\Q$prefix\E(:|$)/)
+    {
+        $ENV{$name}="$prefix:$path";
+    }
+}
+
+sub dump_wine_environment($)
+{
+    return if (!CXLog::is_on());
+
+    my ($inherited)=@_;
+    cxlog($inherited ? "Inherited " : "", "Environment:\n");
+    foreach my $name ("CX_ROOT", "CX_BOTTLE", "WINEPREFIX",
+                      "CX_WINDOWS_VERSION", "PATH", $ldpath_envname,
+                      "WINEDLLPATH", "WINEDLLOVERRIDES",
+                      "LD_PRELOAD", "LD_ASSUME_KERNEL",
+                      "WINELOADER", "WINESERVER", "WINEDEBUG",
+                      "CX_LOG", "CX_DEBUGMSG", "DISPLAY")
+    {
+        cxlog("  $name = ",(defined $ENV{$name}?"\"$ENV{$name}\"":"<undefined>"),"\n");
+    }
+}
+
+sub check_osx_version($$)
+{
+    my ($major, $minor)=@_;
+
+    my $os_vers = qx(sw_vers -productVersion);
+    my @version = split(/\./, $os_vers);
+
+    return $major < $version[0] || ($major == $version[0] && $minor <= $version[1]);
+    return 1;
+}
+
+sub can_run_32bit_wine()
+{
+    return !check_osx_version(10, 15) && !($ENV{WINE_USE_32ON64});
+}
+
+sub can_run_32on64_wine()
+{
+    return check_osx_version(10, 15) || ($ENV{WINE_USE_32ON64} && check_osx_version(10, 14));
+}
+
+
+# Setup the environment
+my ($cxconfig, $mode);
+require CXBottle;
+if (defined $usage)
+{
+    # Don't bother checking the bottle specification
+}
+elsif (!CXBottle::is_initialized())
+{
+    $cxconfig=CXBottle::get_crossover_config();
+    cxlog("Product version=", $cxconfig->get("CrossOver", "ProductVersion", "<unset>"), "\n");
+
+    # Locate the bottle
+    my ($scope, $raw_wineprefix)=CXBottle::setup_bottle_wineprefix($opt_scope);
+    if (!defined $scope)
+    {
+        fatal_error("\%s", $@);
+        exit 1;
+    }
+    $default_warning=$@ if (defined $default_warning);
+
+    # The environment setup (and anything accessing the content of the bottle)
+    # must be serialized
+    my $lock;
+    $lock=CXBottle::lock_bottle($ENV{WINEPREFIX}) if ($opt_lock);
+
+    my ($updater_cmd, $pre_notify_hooks, $notify_hooks);
+    if ($opt_update)
+    {
+        # We cannot use '-e _' here
+        if (-l "$ENV{WINEPREFIX}/cxbottle.conf" and !-e "$ENV{WINEPREFIX}/cxbottle.conf")
+        {
+            # The managed bottle has probably been moved, try to recover
+            my $managedprefix=CXBottle::find_bottle($ENV{CX_BOTTLE}, "managed");
+            if (!defined $managedprefix)
+            {
+                fatal_error("'cxbottle.conf' is not readable. Check the permissions of the managed bottle files in '\%s'\n", $raw_wineprefix);
+            }
+            $cxconfig->read("$managedprefix/cxbottle.conf");
+            my $updater=get_updater($cxconfig);
+            if (!defined $updater)
+            {
+                fatal_error("invalid managed bottle: 'Updater' is not set in '\%s/cxbottle.conf'\n", $managedprefix);
+            }
+            cxlog("Mode = 'broken stub'\n");
+            $mode="stub";
+            $updater_cmd=[$updater, "--force", "--ref-dir", $managedprefix, $ENV{WINEPREFIX}];
+        }
+        elsif ($scope eq "managed" and ($opt_scope || "") ne "managed")
+        {
+            if (!-r "$ENV{WINEPREFIX}/cxbottle.conf")
+            {
+                fatal_error("'cxbottle.conf' is not readable. Check the permissions of the managed bottle files in '\%s'\n", $raw_wineprefix);
+            }
+            $cxconfig->read("$ENV{WINEPREFIX}/cxbottle.conf");
+            my $updater=get_updater($cxconfig);
+            if (!defined $updater)
+            {
+                fatal_error("invalid managed bottle: 'Updater' is not set in '\%s/cxbottle.conf'\n", $raw_wineprefix);
+            }
+
+            # Create the stub bottle
+            # Note that we can also get there if the bottle was found via the
+            # managed default bottle link.
+            cxlog("Mode = 'stub' or 'new-stub'\n");
+            $mode="stub";
+            # Use $raw_wineprefix as we the stub's symbolic links *must* go
+            # through the official path.
+            my $managedprefix=$raw_wineprefix;
+            $raw_wineprefix=CXBottle::compute_new_wineprefix($ENV{CX_BOTTLE}, "private");
+            if (!defined $raw_wineprefix)
+            {
+                fatal_error("unable to create a stub for the '\%s' bottle: \%s\n", $ENV{CX_BOTTLE}, $@);
+            }
+            $ENV{WINEPREFIX}=CXUtils::cxrealpath($raw_wineprefix);
+
+            $updater_cmd=[$updater, "--ref-dir", $managedprefix, $ENV{WINEPREFIX}];
+        }
+        else
+        {
+            if (!-r "$ENV{WINEPREFIX}/cxbottle.conf")
+            {
+                fatal_error("'cxbottle.conf' is not readable. Check the permissions of files in '$raw_wineprefix'\n");
+            }
+            $cxconfig->read("$ENV{WINEPREFIX}/cxbottle.conf");
+            my $updater=get_updater($cxconfig);
+
+            if ($updater and $scope ne "managed")
+            {
+                # Check if the bottle needs an update
+                cxlog("Mode = 'stub'\n");
+                $mode="stub";
+                my $managedprefix=CXBottle::find_bottle($ENV{CX_BOTTLE}, "managed");
+                if (!defined $managedprefix)
+                {
+                    fatal_error("unable to find the managed '\%s' bottle: \%s\n", $ENV{CX_BOTTLE}, $@);
+                }
+                # Don't dereference $managedprefix as the stub's symbolic
+                # links *must* go through the official path.
+
+                $updater_cmd=[$updater, "--ref-dir", $managedprefix, $ENV{WINEPREFIX}];
+            }
+            else
+            {
+                # Check if the bottle needs an upgrade
+                cxlog("Mode = '$scope'\n");
+                $mode=$scope;
+                umask(umask() & ~0055) if ($scope eq "managed" and $> == 0);
+                my $crossover_t=$cxconfig->get("CrossOver", "BuildTimestamp", "");
+                my $bottle_t=$cxconfig->get("Bottle", "Timestamp", "");
+                if ($crossover_t ne $bottle_t)
+                {
+                    # only one element so this will be interpreted as a
+                    # command line
+                    my $template_dir=get_template_directory($cxconfig);
+                    $updater_cmd=[shquote_string("$template_dir/setup")];
+                }
+            }
+        }
+    }
+    else
+    {
+        $cxconfig->read("$ENV{WINEPREFIX}/cxbottle.conf");
+    }
+
+    # Set the environment first so that the configuration below overrides it
+    CXBottle::set_environment($cxconfig, "Bottle environment variables");
+    my $bin_path   = expand_string($cxconfig->get("Wine", "BinPath", "$ENV{CX_ROOT}/bin"));
+    my $lib_path   = $cxconfig->get("Wine", "LibPath");
+    if (!defined $lib_path)
+    {
+        if (can_run_32bit_wine() && -d "$ENV{CX_ROOT}/lib")
+        {
+            $lib_path = "$ENV{CX_ROOT}/lib";
+            $lib_path .= ":$ENV{CX_ROOT}/lib/samba" if (-d "$ENV{CX_ROOT}/lib/samba");
+        }
+        elsif (can_run_32on64_wine() && -d "$ENV{CX_ROOT}/lib32on64")
+        {
+            $lib_path = "$ENV{CX_ROOT}/lib32on64";
+        }
+        elsif (-d "$ENV{CX_ROOT}/lib64")
+        {
+            $lib_path = "$ENV{CX_ROOT}/lib64";
+        }
+    }
+    $lib_path      = expand_string($lib_path);
+    my $dll_path   = expand_string($cxconfig->get("Wine", "DllPath") ||
+                      join( ":", map { $_ .= "/wine"; } grep { -d "$_/wine" } split( /:/, $lib_path )));
+    my $lib64_path;
+    if (-d "$ENV{CX_ROOT}/lib64")
+    {
+        $lib64_path = "$ENV{CX_ROOT}/lib64";
+    }
+    my $ld_preload = expand_string($cxconfig->get("Wine", "LDPreload"));
+    my $ld_assume_kernel = expand_string($cxconfig->get("Wine", "LDAssumeKernel"));
+
+    $ENV{CX_INITIALIZED}="$>:$ENV{CX_BOTTLE}";
+    # $ENV{WINEPREFIX} is set already
+    delete $ENV{CX_WINDOWS_VERSION};
+    $ENV{CX_WINDOWS_VERSION}=$opt_winver if (defined $opt_winver);
+    prepend_env_path("PATH", $bin_path);
+    prepend_env_path("LD_PRELOAD", $ld_preload) if (defined $ld_preload);
+    $ENV{LD_ASSUME_KERNEL}=$ld_assume_kernel if (defined $ld_assume_kernel);
+    $ENV{WINELOADER}=(can_run_32bit_wine() ? cxwhich($bin_path,"wineloader") : undef) //
+        (can_run_32on64_wine() ? cxwhich($bin_path,"wineloader32on64") : undef) //
+        cxwhich($bin_path,"wineloader64");
+    $ENV{WINESERVER}=cxwhich($bin_path,"wineserver");
+    $ENV{WINEDEBUG}=$opt_debugmsg if (defined $opt_debugmsg);
+    $ENV{DYLD_FALLBACK_LIBRARY_PATH}=$ENV{CX_DYLD_FALLBACK_LIBRARY_PATH} if (defined $ENV{CX_DYLD_FALLBACK_LIBRARY_PATH} and !defined $ENV{DYLD_FALLBACK_LIBRARY_PATH});
+    prepend_env_path($ldpath_envname, $lib_path);
+    prepend_env_path($ldpath_envname, $lib64_path) if (defined $lib64_path);
+    $ENV{WINEDLLPATH}=$dll_path;
+    delete $ENV{WINEDLLOVERRIDES};
+    $ENV{WINEDLLOVERRIDES}=$opt_dlloverrides if (defined $opt_dlloverrides);
+    dump_wine_environment(0);
+
+    # And update / upgrade the bottle if necessary
+    if (defined $updater_cmd)
+    {
+        my $pid;
+        if ($opt_gui)
+        {
+            # Wait just a second before popping up the 'please wait' dialog
+            # in the hope that the update / upgrade will be over by then.
+            # This avoids unnecessary visual intrusions.
+            $pid=cxwait(1, "--no-focus",
+                        "Preparing the \%s bottle", $ENV{CX_BOTTLE});
+        }
+
+        cxlog("Updating/upgrading the WinePrefix directory:\n");
+        my $rc=cxsystem(@$updater_cmd);
+        if (defined $pid)
+        {
+            # Kill and wait for it to avoid creating a zombie
+            kill(15, $pid);
+            waitpid($pid, 0);
+        }
+        if ($rc != 0 and $rc != 768)
+        {
+            if (!-d $ENV{WINEPREFIX})
+            {
+                fatal_error("Unable to start the application or open the ".
+                            "document because the creation of the Wine ".
+                            "environment (\%s) failed", $ENV{WINEPREFIX});
+            }
+            elsif ($opt_gui)
+            {
+                cxmessage(
+                    "-title","CrossOver Warning",
+                    "-buttons","OK:0",
+                    "-default","OK",
+                    "-image","crossover",
+                    "An error occurred during the Wine environment (\%s) ".
+                    "creation or update. The application or document may ".
+                    "fail to start or open.", $ENV{WINEPREFIX});
+            }
+            exit(1) if ($opt_update_only);
+	    # Else continue anyway since that's what we do normally
+        }
+    }
+    # FIXME: Do we need to do an is_wineprefix_valid() check around here???
+
+    # End serialized section
+    CXUtils::cxunlock($lock);
+}
+else
+{
+    dump_wine_environment(1);
+}
+
+# Print usage (requires that the environment be setup)
+if (defined $usage)
+{
+    if ($usage==3)
+    {
+        $cxconfig=CXBottle::get_crossover_config();
+        print "Product Name: ", CXUtils::get_product_name(), "\n";
+        print "Public Version: 2.38.3\n";
+        foreach my $name ("Product Version", "Build Tag", "Build Timestamp")
+        {
+            print "$name: ";
+            my $prop=$name;
+            $prop =~ s/ //g;
+            print $cxconfig->get("CrossOver", $prop, "<unknown>"), "\n";
+        }
+        exit 0;
+    }
+    my $name0=cxname0();
+    if ($usage)
+    {
+        cxerr("try '$name0 --help' for more information\n");
+        exit $usage;
+    }
+    print "Usage: $name0 [--bottle BOTTLE] [command]\n";
+    print "            [options] [application arguments]\n";
+
+    print "\n";
+    if ($name0 ne "cxstart")
+    {
+        print "Runs Windows, Winelib or Native applications in the Wine environment. With the\n";
+        print "--start command, documents can also be opened using the Windows associations.\n";
+
+        print "\n";
+        print "Where command is one of:\n";
+        print "  --cx-app FILE   Run the specified Windows executable\n";
+        print "  --wl-app FILE   Run the specified Winelib executable\n";
+        print "  --wl32-app FILE Run the specified 32-bit Winelib executable\n";
+        print "  --ux-app FILE   Run the specified Native executable\n";
+        print "                  Native paths are not converted to Windows paths\n";
+        print "  --cx-hooks ACTION Runs the specified action through the CrossOVer hooks.\n";
+        print "  --start FILE    Open or run the specified document\n";
+        print "  --update-only   Only update the bottle\n";
+        print "  --help, -h      Shows this help message\n";
+        print "  --version       Outputs the version information and exits\n";
+        print "If no command is specified, the first non option argument is used as the name\n";
+        print "of the Windows application to run.\n";
+    }
+    else
+    {
+        print "Opens the specified document using the Windows associations.\n";
+
+        print "\n";
+        print "Where command is one of:\n";
+        print "  --help, -h      Shows this help message\n";
+        print "  --version       Outputs the version information and exits\n";
+    }
+
+    print "\n";
+    print "Options:\n";
+    print "  --bottle BOTTLE Use the specified bottle. If this option is not used,\n";
+    print "                  fallback to \$CX_BOTTLE and then to 'default'\n";
+    print "  --scope SCOPE   If set to managed, the bottle will be looked up in the\n";
+    print "                  system-wide bottle locations, otherwise it will refer to a\n";
+    print "                  private bottle\n";
+    print "  --start-only EXTLIST Only allow document filenames ending with one of the\n";
+    print "                  extensions in this colon-separated list\n";
+    print "  --start-default MIME Assume the document is of the specified MIME type\n";
+    print "                  if it has no extension\n";
+    print "  --start-mime MIME Use the specified MIME type to open the document\n";
+    print "                  instead of selecting it based on the file extension\n";
+    print "  --start-class NAME Use the specified Windows association to open the document\n";
+    print "                  instead of selecting it based on the file extension\n";
+    print "  --start-verb VERB Perform the specified Windows action on the document\n";
+    print "  --workdir DIRECTORY Change the current directory as specified before\n";
+    print "                  starting the application, but after converting native paths\n";
+    print "                  to Windows paths\n";
+
+    print "\n";
+    print "Advanced options:\n";
+    print "  --desktop NAME  The Wine desktop to run the command in\n";
+    print "  --dll OVERRIDES Specifies dll overrides\n";
+    print "                  See the Wine documentation for more details\n";
+    print "  --winver VERSION Overrides the default Windows version\n";
+    print "                  See the Wine documentation for more details\n";
+    print "  --no-convert    Don't convert native paths to Windows paths\n";
+    print "  --no-quotes     Don't quote arguments, even if they contain spaces or\n";
+    print "                  special characters\n";
+    print "  --no-update     Don't update or upgrade the bottle\n";
+    print "  --no-lock       Don't lock, update or upgrade the bottle. Must be used with\n";
+    print "                  extreme care\n";
+    print "  --untrusted     The executable or document may come from an untrusted source\n";
+    print "  --no-wait       Exit immediately after the process is started\n";
+    print "  --wait          Wait for the process to exit. This is the default\n";
+    print "  --wait-children Wait for the process and all its children to exit\n";
+    print "  --wait-all      Wait for all Wine processes to exit\n";
+    print "  --display DISPLAY Sets the X display as specified\n";
+    print "  --no-gui        Don't create a dialog if an error occurs\n";
+    print "  --new-console   Create a window for console applications\n";
+    print "  --verbose       Output more information about what is going on\n";
+    print "  --cx-log LOGFILE Sends debugging output to the specified file\n";
+    print "                  This overrides \$CX_LOG. If the file name ends with '.z',\n";
+    print "                  '.gz' or '.bz2', the file will be compressed on the fly\n";
+    print "                  with compress, gzip or bzip2 respectively\n";
+    print "  --debugmsg CHANNELS Specifies a list of debugging channels to enable or\n";
+    print "                  disable. This overrides \$CX_DEBUGMSG\n";
+    print "                  See the Wine documentation for more details\n";
+    print "\n";
+    print "Any remaining argument is handed off to the Windows application.\n";
+    print "Arguments matching an existing native file are converted to a Windows path\n";
+    print "unless --no-convert is used.\n";
+    exit 0;
+}
+
+if ($opt_update_only)
+{
+    exit(0);
+}
+
+if ($opt_wait_all)
+{
+    # If exec fails we will get an error message and a return code of 2
+    exec $ENV{WINESERVER}, "-w";
+}
+
+# Search for the application
+
+sub is_valid_win_path($)
+{
+    my ($path) = @_;
+    return 1 if ($path !~ /[*?<>":]/);
+    return 0 if ($path !~ s/^[a-zA-Z]://);
+    return 1 if ($path !~ /[*?<>":]/);
+    return 0;
+}
+
+my $cmd;
+my @wine_args;
+if (defined $ux_app)
+{
+    $cmd=$ux_app;
+}
+elsif (defined $cx_hooks)
+{
+    CXBottle::run_bottle_hooks([$cx_hooks, @ARGV]);
+    exit 0;
+}
+elsif (defined $opt_start)
+{
+    if (!is_valid_win_path($opt_start))
+    {
+        my $path;
+        foreach my $entry (split m!/!, $opt_start)
+        {
+            $path=(defined $path ? "$path/" : "");
+            $path.=$entry;
+            if ($entry =~ /[*?<>":]/ and -l $path)
+            {
+                my $target=readlink($path);
+                if ($target =~ m+^/+)
+                {
+                    $path=$target;
+                }
+                else
+                {
+                    $path=cxdirname($path) . "/$target";
+                }
+            }
+        }
+        $opt_start=$path;
+        if (!is_valid_win_path($opt_start) and -e $opt_start)
+        {
+            cxwarn("'$opt_start' contains characters that are not allowed in Windows filenames (*?<>\":) so the Windows application may not succeed in opening it\n");
+        }
+    }
+    if (!defined $opt_start_mime and !defined $opt_start_class)
+    {
+        my $bad_extension;
+        my $ext=$opt_start;
+        if ($ext =~ s/^.*\././)
+        {
+            if ($opt_start_only)
+            {
+                $bad_extension=1;
+                foreach my $allowed (split /:+/, $opt_start_only)
+                {
+                    if ($ext =~ /^\Q$allowed\E$/i)
+                    {
+                        $bad_extension=0;
+                        last;
+                    }
+                }
+                $opt_start_mime=$opt_start_default if ($bad_extension);
+            }
+        }
+        else
+        {
+            $opt_start_mime=$opt_start_default;
+            $bad_extension=1 if ($opt_start_only and !defined $opt_start_default);
+        }
+        if ($bad_extension)
+        {
+            exit 1 if (!$opt_gui);
+            my $rc;
+            if ($opt_start_default)
+            {
+                $rc=cxmessage(
+                    "-title", "CrossOver Warning",
+                    "-buttons", "Continue:0,Abort:2",
+                    "-default", "Abort",
+                    "-image", "crossover",
+                    "-named-args", "WARNING: The extension of the " .
+                    "'\%(filename)s' document does not match the expected " .
+                    "MIME type: \%(mime)s. This could indicate malicious " .
+                    "activity.\n\n" .
+                    "Click on 'Continue' to ignore the document extension " .
+                    "and open it as a \%(mime)s file, or click on 'Abort' to stop " .
+                    "now.",
+                    "filename", $opt_start, "mime", $opt_start_default);
+            }
+            else
+            {
+                $rc=cxmessage(
+                    "-title", "CrossOver Warning",
+                    "-buttons", "Abort:2",
+                    "-default", "Abort",
+                    "-image", "crossover",
+                    "-named-args", "Not opening the '\%(filename)s' document " .
+                    "because its extension does not match any of the allowed " .
+                    "extensions: \%(extensions)s. This could indicate " .
+                    "malicious activity.\n\n" .
+                    "If you wish to open it anyway, save it to disk, " .
+                    "verify its extension, and then open it manually.",
+                    "filename", $opt_start, "extensions", $opt_start_only);
+            }
+            exit 1 if ($rc);
+        }
+    }
+    $cmd=$ENV{WINELOADER};
+    unshift @ARGV, $opt_start;
+    unshift @wine_args, "--start", "--";
+    unshift @wine_args, "--desktop", $opt_desktop if ($opt_desktop);
+    unshift @wine_args, "--workdir", $opt_workdir if ($opt_workdir);
+    unshift @wine_args, "--no-convert" if (!$opt_convert);
+    unshift @wine_args, "--no-quotes" if (!$opt_quotes);
+    unshift @wine_args, "--start-mime", $opt_start_mime if ($opt_start_mime);
+    unshift @wine_args, "--start-class", $opt_start_class if ($opt_start_class);
+    unshift @wine_args, "--start-verb", $opt_start_verb if ($opt_start_verb);
+    unshift @wine_args, "--no-wait" if (!$opt_wait);
+    unshift @wine_args, "--wait-children" if ($opt_wait_children);
+    unshift @wine_args, "--new-console" if ($opt_new_console);
+    unshift @wine_args, "--enable-alt-loader", $opt_enable_alt_loader if ($opt_enable_alt_loader);
+    unshift @wine_args, "winewrapper.exe";
+}
+else
+{
+    my $wl_searchpath;
+    $cmd=$ENV{WINELOADER};
+
+    if (defined $arg_app)
+    {
+        # Use the name we were invoked as, to find either a WineLib
+        # application, or a Windows executable
+        $arg_app .= ".exe" unless ($arg_app =~ /\.exe$/i);
+        $wl_app = cxwhich($ENV{WINEDLLPATH}, "$arg_app.so", 1);
+        if (!defined $wl_app)
+        {
+            # We could not find a Winelib application so we assume it
+            # is a Windows executable.
+            $cx_app=$arg_app;
+        }
+    }
+
+    if (defined $wl_app)
+    {
+        my $cxconfig;
+        require CXBottle;
+        $cxconfig=CXBottle::get_crossover_config();
+        $cxconfig->read("$ENV{WINEPREFIX}/cxbottle.conf");
+        if ($cxconfig->get("Bottle", "WineArch", "win32") eq "win64")
+        {
+            # FIXME: Make it possible to override this?
+            $wl_searchpath="$ENV{CX_ROOT}/lib64/wine:$ENV{WINEDLLPATH}";
+        }
+        else
+        {
+            $wl_searchpath=$ENV{WINEDLLPATH};
+        }
+    }
+    elsif (defined $wl32_app)
+    {
+        $wl_app=$wl32_app;
+        $wl_searchpath=$ENV{WINEDLLPATH};
+    }
+
+    if (defined $wl_app)
+    {
+        my $exe_name = $wl_app;
+        my $exe_so_name;
+        if ($exe_name =~ /\.exe\.so$/)
+        {
+            $exe_name = substr($exe_name, 0, -3);
+        }
+        elsif ($exe_name !~ /\.exe$/)
+        {
+            $exe_name .= ".exe";
+        }
+        $exe_so_name = $exe_name . ".so";
+        $exe_name = cxwhich($wl_searchpath, $exe_name, 1);
+        if (!defined $exe_name)
+        {
+            $exe_name = cxwhich($wl_searchpath, $exe_so_name, 1);
+            if (!defined $exe_name)
+            {
+                cxerr("could not find '$wl_app' in '$wl_searchpath'\n");
+                exit 2;
+            }
+        }
+        unshift @ARGV, $exe_name;
+        unshift @wine_args, "--run","--" if (!$opt_demo_status and !$opt_demo_nag);
+        unshift @wine_args, "--desktop", $opt_desktop if ($opt_desktop);
+        unshift @wine_args, "--no-wait" if (!$opt_wait);
+        unshift @wine_args, "--wait-children" if ($opt_wait_children);
+        unshift @wine_args, "--new-console" if ($opt_new_console);
+        unshift @wine_args, "--no-convert" if (!$opt_convert);
+        unshift @wine_args, "--no-quotes" if (!$opt_quotes);
+        unshift @wine_args, "--enable-alt-loader", $opt_enable_alt_loader if ($opt_enable_alt_loader);
+        unshift @wine_args, "winewrapper.exe";
+    }
+    else
+    {
+        if (defined $cx_app)
+        {
+            my $c_root="$ENV{WINEPREFIX}/drive_c";
+            my @apps;
+            if ($cx_app =~ /^[a-zA-Z]:/ )
+            {
+                push @apps, $cx_app;
+            }
+            else
+            {
+                my $pattern=CXUtils::glob2regexp($cx_app, 1);
+                $pattern.="\\.(?i:com|exe)" if ($cx_app !~ /\.(?i:com|exe)$/);
+                @apps=grep(!m~/drive_c/windows/syswow64/~i, CXUtils::cxfind($c_root, "^$pattern\$", 3));
+            }
+            if (!@apps)
+            {
+                cxerr("could not find '$cx_app' in '$c_root'. Is it installed?\n");
+                exit 2;
+            }
+            elsif (@apps > 1)
+            {
+                cxerr("multiple matches found for '$cx_app' in '$c_root'\n");
+                exit 2;
+            }
+            unshift @ARGV, @apps;
+        }
+        unshift @wine_args, "--demo-nag","--" if ($opt_demo_nag);
+        unshift @wine_args, "--run","--" if (!$opt_demo_status and !$opt_demo_nag);
+        unshift @wine_args, "--workdir", $opt_workdir if ($opt_workdir);
+        unshift @wine_args, "--desktop", $opt_desktop if ($opt_desktop);
+        unshift @wine_args, "--no-convert" if (!$opt_convert);
+        unshift @wine_args, "--no-quotes" if (!$opt_quotes);
+        unshift @wine_args, "--no-wait" if (!$opt_wait);
+        unshift @wine_args, "--wait-children" if ($opt_wait_children);
+        unshift @wine_args, "--new-console" if ($opt_new_console);
+        unshift @wine_args, "--enable-alt-loader", $opt_enable_alt_loader if ($opt_enable_alt_loader);
+        unshift @wine_args, "winewrapper.exe";
+    }
+}
+if (@ARGV and -f $ARGV[0])
+{
+    check_file($cxconfig, $opt_untrusted, $mode, (!defined $ux_app and !defined $wl_app), $ARGV[0]);
+}
+
+# Setup the logging
+my $log;
+if ($opt_cx_log ne "-")
+{
+    my $zipper;
+
+    if ($opt_cx_log =~ /\.gz$/)
+    {
+        $zipper = CXUtils::get_gzip() . " -2";
+    }
+    elsif ($opt_cx_log =~ /\.bz2$/)
+    {
+        $zipper = CXUtils::get_bzip2() . " -9";
+    }
+    elsif ($opt_cx_log =~ /\.z$/)
+    {
+        $zipper = "compress";
+    }
+    else
+    {
+        $zipper = undef;
+    }
+
+    if ($zipper)
+    {
+        $log=undef if (!open($log, "| exec $zipper -c >" . shquote_string($opt_cx_log)));
+    }
+    else
+    {
+        if (open($log, ">>", $opt_cx_log))
+        {
+            truncate($log, 0);
+        }
+        else
+        {
+            $log=undef;
+        }
+    }
+    cxerr("unable to open the log file: $!\n") if (!$log);
+}
+
+my @args;
+if (defined $ux_app or !$opt_convert)
+{
+    # Pass the arguments as is
+    @args=@ARGV;
+}
+else
+{
+    # Cleanup the arguments
+    foreach my $arg (@ARGV)
+    {
+        # ':switch:' is for backward compatibility
+        $arg =~ s+:switch:+/+g;
+        # "~WS~" corresponds to '/' and "~WB~" to '\'
+        $arg =~ s+~WS~+/+g;
+        $arg =~ s+~WB~+\\+g;
+        push @args,$arg;
+    }
+}
+
+
+# Final checks and logging setup
+cxlog("Command:\n");
+cxlog("$cmd @wine_args @args\n");
+if ($log)
+{
+    # Redirect stderr
+    open STDERR, ">&=" . fileno($log);
+    my $tmp=select STDERR; $| = 1; select $tmp; # Make unbuffered
+    close($log);
+}
+print STDERR $default_warning if ($default_warning);
+
+# Start Wine
+if ($log or CXLog::is_on())
+{
+    print STDERR "\n** ",scalar(localtime(time)),"\n";
+    print STDERR "Starting '",join("' '",$cmd,@wine_args),"'\n";
+    print STDERR "'",join("' '",@args),"'\n\n";
+}
+exec $cmd, @wine_args, @args
+or cxerr("unable to start '$cmd': $!\n");
+exit 1;

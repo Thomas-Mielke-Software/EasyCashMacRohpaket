@@ -1,0 +1,34 @@
+#!/bin/sh
+# (c) Copyright 2008. CodeWeavers, Inc.
+
+# Setup logging
+if [ -n "$CX_LOG" ]
+then
+    [ "$CX_LOG" = "-" ] || exec 2>>"$CX_LOG"
+    echo >&2
+    echo "***** `date`" >&2
+    echo "Starting: $0 $@" >&2
+    set -x
+fi
+
+action="$1"
+if [ "$2" = "in-favour" ]
+then
+    # Treating this as an upgrade is less work and safer
+    action="upgrade"
+fi
+
+CX_ROOT="/opt/@product_id@"
+CX_BOTTLE="@bottle@"
+export CX_ROOT CX_BOTTLE
+
+if [ "$action" = "remove" ]
+then
+    # Uninstall the bottle before cxbottle.conf gets deleted
+    "$CX_ROOT/bin/cxbottle" --removeall
+fi
+
+# Make sure the script returns 0
+true
+
+#DEBHELPER#

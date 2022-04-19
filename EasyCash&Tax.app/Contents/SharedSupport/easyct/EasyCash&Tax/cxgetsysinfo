@@ -1,0 +1,190 @@
+#!/bin/sh
+# (c) Copyright 2004-2006, 2008. CodeWeavers, Inc.
+#----------------------------------------------------------------------------
+#       This script gathers up information about a given Linux system
+#   that is relevant to CrossOver.
+#       This script runs best from a CrossOver install; it will find
+#   certain internal utilities and report their results. However, it
+#   also runs completely standalone as well.
+#----------------------------------------------------------------------------
+
+# Portable which(1) implementation
+cxwhich()
+{
+    case "$1" in
+    /*)
+        if [ -x "$1" -a -f "$1" ]
+        then
+            echo "$1"
+            return 0
+        fi
+        ;;
+    */*)
+        if [ -x "`pwd`/$1" -a -f "`pwd`/$1" ]
+        then
+            echo "`pwd`/$1"
+            return 0
+        fi
+        ;;
+    *)
+        saved_ifs="$IFS"
+        IFS=":"
+        for d in $PATH
+        do
+            IFS="$saved_ifs"
+            if [ -n "$d" -a -x "$d/$1" -a -f "$d/$1" ]
+            then
+                echo "$d/$1"
+                return 0
+            fi
+        done
+        ;;
+    esac
+    return 1
+}
+
+# Locate where CrossOver is installed by looking for the directory
+# where the cxmenu script is located, unwinding symlinks on the way
+locate_cx_root()
+{
+    argv0=`cxwhich "$0"`
+    [ -z "$argv0" ] && argv0="$0"
+    echo "$argv0" | egrep "^/" >/dev/null
+    if [ $? -ne 0 ]
+    then
+        argv0="`pwd`/$argv0"
+    fi
+    dir=`dirname "$argv0"`
+    bindir=`echo "$dir" | sed -e 's%/lib$%/bin%'`
+    while [ ! -x "$bindir/cxmenu" -o ! -f "$bindir/cxmenu" ]
+    do
+        [ ! -h "$argv0" ] && break
+        argv0=`ls -l "$argv0" | sed -e 's/^.*-> //'`
+        echo "$argv0" | egrep "^/" >/dev/null
+        if [ $? -ne 0 ]
+        then
+            argv0="$dir/$argv0"
+        fi
+        dir=`dirname "$argv0"`
+        bindir=`echo "$dir" | sed -e 's%/lib$%/bin%'`
+    done
+    bindir=`echo "$bindir" | sed -e 's%/\./\(\./\)*%/%g' -e 's%/\.$%%'`
+    cx_root=`dirname "$bindir"`
+    if [ ! -x "$cx_root/bin/cxmenu" -o ! -f "$cx_root/bin/cxmenu" ]
+    then
+        if [ "$1" = "--no-fail" ]
+        then
+            cx_root=""
+            return 1
+        fi
+        echo "`basename \"$0\"`:error: could not find CrossOver in '$cx_root'" >&2
+        exit 1
+    fi
+    return 0
+}
+
+
+#----------------------------------------------------------------------------
+#   capture_file
+#       Record the contents of a file on the system
+#----------------------------------------------------------------------------
+capture_file()
+{
+    echo "FILE $1"
+    cat "$1" 2>&1
+    echo "----------"
+}
+
+#----------------------------------------------------------------------------
+#   capture_command
+#       Invoke and record the output of a command
+#----------------------------------------------------------------------------
+capture_command()
+{
+    echo "COMMAND $1"
+    eval "$1" 2>&1
+    echo "----------"
+}
+
+
+if [ $# -gt 0 ]
+then
+    name0=`basename "$0"`
+    if [ "$1" = "--help" -o "$1" = "-h" -o "$1" = "-?" ]
+    then
+        echo "Usage: $name0 [--help]"
+
+        echo
+        echo "This script gathers up information about a given system that is relevant"
+        echo "to CrossOver. It runs best from a CrossOver install but will also run"
+        echo "completely standalone."
+
+        echo ""
+        echo "Options:"
+        echo "  --help, -h   Shows this help message";
+        exit 0
+    fi
+    echo "$name0:error: unknown option '$1'" >&2
+    echo "$name0:error: try '$name0 --help' for more information" >&2
+    exit 2
+fi
+
+
+echo "#------------------------------------------------------------------------"
+echo "#  System Information; `date`"
+echo "#------------------------------------------------------------------------"
+
+# Capture the general machine information
+capture_command "uname -a"
+for file in /etc/*release* /etc/*version*
+do
+    capture_file "$file"
+done
+capture_command "df -k"
+capture_command "ulimit -a"
+# Capture the environment before we modify $PATH
+capture_command "env"
+capture_file "/proc/version"
+capture_file "/proc/cpuinfo"
+capture_file "/proc/meminfo"
+
+
+# On some systems we need to extend $PATH
+PATH="$PATH:/sbin:/usr/sbin:/usr/local/sbin:/usr/X/bin"
+export PATH
+
+
+# Capture version information
+capture_command "konqueror --version"
+capture_command "gnome-session --version"
+capture_command "gnome-panel --version"
+capture_command "mozilla --version"
+capture_command "firefox --version"
+capture_command "thunderbird --version"
+capture_command "evolution --version"
+capture_command "clamdscan --version"
+capture_command "clamscan --version"
+# Some ALSA versions are buggy and get into an infinite loop
+# when generating these files. So truncate the output.
+capture_file "/proc/asound/version" | head -n 10
+capture_file "/proc/asound/cards" | head -n 20
+
+
+# More CrossOver-specific checks
+cxdiag --debug
+cxdiag64 --debug
+locate_cx_root --no-fail
+capture_file "/etc/mtab"
+capture_file "/etc/prelink.conf"
+capture_file "/etc/sysconfig/prelink"
+capture_command "ls -l /lib/libc-*.so /lib/libc.so*"
+capture_command "$cx_root/bin/wine --version"
+capture_command "$cx_root/bin/locate_gui.sh"
+
+
+# Capture low-level information
+capture_command "xdpyinfo"
+capture_command "glxinfo"
+capture_file "/proc/self/maps"
+capture_command "lsmod"
+capture_command "sysctl -a"

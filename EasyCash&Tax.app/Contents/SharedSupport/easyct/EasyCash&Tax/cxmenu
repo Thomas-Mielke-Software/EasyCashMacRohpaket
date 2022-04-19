@@ -1,0 +1,1547 @@
+#!/usr/bin/perl
+# (c) Copyright 2005-2014. CodeWeavers, Inc.
+use warnings;
+use strict;
+
+my @desktop_plugins=("CXMenuWindows", "CXMenuCheck",
+                     "CXMenuDebian", "CXMenuCDE",
+                     "CXMenuXDG", "CXMenuDtop", "CXMenuPerm",
+                     "CXMenuMacOSX",
+                     "CXMenuShortcut");
+
+my %auto_localize=("Programs"             => 1,
+                   "Windows Applications" => 1,
+                   "Windows Games" => 1);
+
+
+# Portable which(1) implementation
+sub cxwhich($$;$)
+{
+    my ($dirs, $app, $noexec)=@_;
+    if ($app =~ /^\//)
+    {
+        return $app if ((-x $app or $noexec) and -f $app);
+    }
+    elsif ($app =~ /\//)
+    {
+        require Cwd;
+        my $path=Cwd::cwd() . "/$app";
+        return $path if ((-x $path or $noexec) and -f $path);
+    }
+    else
+    {
+        foreach my $dir (split /:/, $dirs)
+        {
+            return "$dir/$app" if ($dir ne "" and (-x "$dir/$app" or $noexec) and -f "$dir/$app");
+        }
+    }
+    return undef;
+}
+
+# Fast dirname() implementation
+sub _cxdirname($)
+{
+    my ($path)=@_;
+    return undef if (!defined $path);
+    return "." if ($path !~ s!/+[^/]+/*$!!s);
+    return "/" if ($path eq "");
+    return $path;
+}
+
+# Locate where CrossOver is installed by looking for the directory
+# where the cxmenu script is located, unwinding symlinks on the way
+sub locate_cx_root(;$)
+{
+    my ($fallback)=@_;
+    my $argv0=cxwhich($ENV{PATH},$0);
+    $argv0=$0 if (!defined $argv0);
+    if ($argv0 !~ m+^/+)
+    {
+        require Cwd;
+        $argv0=Cwd::cwd() . "/$argv0";
+    }
+    my $dir=_cxdirname($argv0);
+    my $bindir=$dir;
+    $bindir =~ s%/lib$%/bin%;
+    while (!-x "$bindir/cxmenu" or !-f "$bindir/cxmenu")
+    {
+        last if (!-l $argv0);
+        $argv0=readlink($argv0);
+        $argv0="$dir/$argv0" if ($argv0 !~ m+^/+);
+        $dir=_cxdirname($argv0);
+        $bindir=$dir;
+        $bindir =~ s%/lib$%/bin%;
+    }
+    $bindir =~ s%/(?:\./)+%/%g;
+    $bindir =~ s%/\.$%%;
+    $ENV{CX_ROOT}=_cxdirname($bindir);
+    if ((!-x "$ENV{CX_ROOT}/bin/cxmenu" or !-f "$ENV{CX_ROOT}/bin/cxmenu") and
+        $fallback)
+    {
+        $ENV{CX_ROOT}=$fallback;
+    }
+    if (!-x "$ENV{CX_ROOT}/bin/cxmenu" or !-f "$ENV{CX_ROOT}/bin/cxmenu")
+    {
+        my $name0=$0;
+        $name0 =~ s+^.*/++;
+        print STDERR "$name0:error: could not find CrossOver in '$ENV{CX_ROOT}'\n";
+        exit 1;
+    }
+    return $ENV{CX_ROOT};
+}
+
+BEGIN {
+    unshift @INC, locate_cx_root() . "/lib/perl";
+}
+use CXLog;
+use CXUtils;
+use CXMenu;
+
+my $filters={};
+sub get_filter_list($$)
+{
+    my ($cxmenu, $filter)=@_;
+
+    $filter||="";
+    my $filter_list=$filters->{$filter};
+    if (!defined $filter_list)
+    {
+        my @list;
+        if ($filter eq "")
+        {
+            @list=grep !/^Settings$/i, $cxmenu->get_section_names();
+        }
+        else
+        {
+            @list=split /:+/, $filter;
+        }
+        $filters->{$filter}=$filter_list=\@list;
+    }
+    return $filter_list;
+}
+
+sub check_menu_path($)
+{
+    my ($path)=@_;
+
+    if ($path =~ /:/)
+    {
+        cxerr("colons are not allowed in menu path '$path'\n");
+        return 0;
+    }
+    if ($path =~ m%/\.*/%)
+    {
+        # Path contains stuff like '//', '/./', '/../', etc.
+        cxerr("invalid menu path '$path'\n");
+        return 0;
+    }
+    if ($path !~ m%^(?:Desktop|StartMenu)(?:[._][^/]+)?/%)
+    {
+        cxerr("unknown menu root '$path'\n");
+        return 0;
+    }
+    return 1;
+}
+
+my %menu_components;
+sub path_to_components($$$$$)
+{
+    my ($rawpath, $cxconfig, $menu_root, $menu_strip, $tag)=@_;
+    $rawpath =~ s!/+!/!g;
+
+    my $components=$menu_components{$rawpath};
+    if (!exists $menu_components{$rawpath})
+    {
+        # Don't give up even if the menu path or root is not valid
+        # so we build a negative cache
+        my $menu;
+        if (check_menu_path($rawpath))
+        {
+            $menu->{rawpath}=$rawpath;
+            my $path=$rawpath;
+            $path =~ s%^(Desktop|StartMenu)(?:[._][^/]+)?/%/%;
+            $menu->{root}=$1;
+            $menu->{is_dir}=1 if ($path =~ s%/$%%);
+            $menu->{is_desktop}=1 if ($menu->{root} eq "Desktop");
+            if (!$menu->{is_desktop})
+            {
+                if ($menu_strip)
+                {
+                    my @path_items=split "/", $path;
+                    if ($menu_strip+1 < @path_items)
+                    {
+                        splice @path_items, 0, $menu_strip+1;
+                        $path=join("/", "", @path_items);
+                    }
+                    elsif ($menu->{is_dir})
+                    {
+                        # Menu folders that are not deep enough disappear
+                        # entirely
+                        $menu=undef;
+                    }
+                    else
+                    {
+                        # But menu entries just get moved to the root folder
+                        $path="/$path_items[-1]";
+                    }
+                }
+                $path="$menu_root$path" if (defined $menu_root);
+            }
+            if ($menu)
+            {
+                # These are the only _file_ extensions that are always hidden
+                # by Windows, including in the menus
+                $path =~ s%\.(?:lnk|pif|url)$%%i if (!$menu->{is_dir});
+                $menu->{path}=$path;
+                $menu->{dir}=$path;
+                $menu->{dir}=~ s%/[^/]*$%/%;
+                $menu->{name}=$path;
+                $menu->{name}=~s%^.*/%%;
+                $menu->{name}=~s%/$%%;
+            }
+
+            # Re-name the Windows Steam icon to distinguish
+            # it from the native client.
+            if ($menu && CXUtils::get_desktop_environment ne "macosx")
+            {
+                $menu->{name}=~s/^Steam$/Steam\ \(CrossOver\)/;
+            }
+        }
+        if ($menu)
+        {
+            $menu->{tag}=$tag;
+            my $path="";
+            foreach my $item (split "/", $menu->{dir})
+            {
+                next if ($item eq "");
+                $path .="/$item";
+                my $component={
+                    name         => $item,
+                    path         => $path,
+                    intermediate => 1,
+                    is_dir       => 1,
+                    tag          => $tag
+                };
+                push @$components, $component;
+            }
+            push @$components, $menu;
+        }
+
+        $menu_components{$rawpath}=$components;
+    }
+    return $components;
+}
+
+sub update_field($$$)
+{
+    my ($section, $name, $value)=@_;
+
+    $value||="";
+    my $oldval=$section->get($name, "");
+    return 0 if ($oldval eq $value);
+
+    if ($value eq "")
+    {
+        $section->remove($name);
+    }
+    else
+    {
+        $section->set($name, $value);
+    }
+    return 1;
+}
+
+
+# Process command-line options
+my $opt_create;
+my $opt_delete;
+my $opt_purge;
+my $opt_delete_filter;
+my $opt_mode;
+my $opt_mode_filter;
+my $opt_mmenu_never;
+my $opt_query;
+my $opt_query_filter;
+my $opt_list_files;
+my $opt_list_files_filter;
+my $opt_start;
+my $opt_wait_children;
+my $opt_enable_alt_loader;
+my $opt_install;
+my $opt_install_filter;
+my $opt_uninstall;
+my $opt_uninstall_filter;
+my $opt_removeall;
+my $opt_destdir;
+my $opt_sync;
+my $opt_sync_install_none;
+my $opt_sync_uninstall_none;
+my $opt_utf8;
+my $opt_bottle;
+my $opt_crossover;
+my $opt_conf;
+my $opt_menu_root;
+my $opt_menu_strip;
+my $opt_tag;
+my $opt_pattern;
+my $opt_filter;
+my $opt_ignorelist;
+my $opt_ro_desktopdata;
+my $opt_description;
+my $opt_type;
+my $opt_command;
+my $opt_icon;
+my $opt_shortcut;
+my $opt_scope;
+my $opt_menu_scope;
+my $opt_arch;
+my $opt_arch_filter;
+my $opt_verbose;
+my $opt_help;
+require CXOpts;
+my $cxopts=CXOpts->new(["stop_on_unknown", "stop_on_non_option"]);
+$cxopts->add_options(["create=s"      => \$opt_create,
+                      "delete"        => \$opt_delete,
+                      "purge"         => \$opt_purge,
+                      "delete-filter=s" => \$opt_delete_filter,
+                      "mode=s"        => \$opt_mode,
+                      "mode-filter=s" => \$opt_mode_filter,
+                      "mmenu-never=s" => \$opt_mmenu_never,
+                      "query"         => \$opt_query,
+                      "query-filter=s" => \$opt_query_filter,
+                      "list-files"    => \$opt_list_files,
+                      "list-files-filter=s" => \$opt_list_files_filter,
+                      "start=s"       => \$opt_start,
+                      "wait-children" => \$opt_wait_children,
+                      "enable-alt-loader=s" => \$opt_enable_alt_loader,
+                      "install"       => \$opt_install,
+                      "install-filter=s" => \$opt_install_filter,
+                      "uninstall"     => \$opt_uninstall,
+                      "uninstall-filter=s" => \$opt_uninstall_filter,
+                      "removeall"     => \$opt_removeall,
+                      "sync"          => \$opt_sync,
+                      "destdir=s"     => \$opt_destdir,
+                      "sync-install-none" => \$opt_sync_install_none,
+                      "sync-uninstall-none" => \$opt_sync_uninstall_none,
+                      "utf8"          => \$opt_utf8,
+                      "bottle=s"      => \$opt_bottle,
+                      "crossover"     => \$opt_crossover,
+                      "conf=s"        => \$opt_conf,
+                      "menu-root=s"   => \$opt_menu_root,
+                      "menu-strip=s"  => \$opt_menu_strip,
+                      "tag=s"         => \$opt_tag,
+                      "pattern=s"     => \$opt_pattern,
+                      "filter=s"      => \$opt_filter,
+                      "ignorelist=s"  => \$opt_ignorelist,
+                      "ro-desktopdata"=> \$opt_ro_desktopdata,
+                      "description=s" => \$opt_description,
+                      "type=s"        => \$opt_type,
+                      "command=s"     => \$opt_command,
+                      "icon=s"        => \$opt_icon,
+                      "shortcut=s"    => \$opt_shortcut,
+                      "scope=s"       => \$opt_scope,
+                      "menu-scope=s"  => \$opt_menu_scope,
+                      "arch=s"        => \$opt_arch,
+                      "arch-filter=s" => \$opt_arch_filter,
+                      "verbose!"      => \$opt_verbose,
+                      "?|h|help"      => \$opt_help
+                     ]);
+my $err=$cxopts->parse();
+CXLog::fdopen(2) if ($opt_verbose);
+CXLog::set_default_channel("cxmenu");
+
+
+# Validate the command line options
+my $usage;
+my ($read_only, $only_non_empty, $only_removeall, %mmenu_never);
+if ($err)
+{
+    cxerr("$err\n");
+    $usage=2;
+}
+elsif ($opt_help)
+{
+    $usage=0;
+}
+elsif (@ARGV and !defined $opt_start)
+{
+    # Don't even validate the options if there are some we did not understand
+    if ($ARGV[0] =~ /^-/)
+    {
+        cxerr("unknown '$ARGV[0]' option\n");
+    }
+    else
+    {
+        cxerr("unexpected '$ARGV[0]' argument\n");
+    }
+    $usage=2;
+}
+else
+{
+    if (!$opt_utf8)
+    {
+        # Re-encode the parameters to UTF-8
+        require CXRecode;
+        $opt_create=CXRecode::from_sys("UTF-8", $opt_create);
+        $opt_filter=CXRecode::from_sys("UTF-8", $opt_filter);
+        $opt_delete_filter=CXRecode::from_sys("UTF-8", $opt_delete_filter);
+        $opt_mode_filter=CXRecode::from_sys("UTF-8", $opt_mode_filter);
+        $opt_query_filter=CXRecode::from_sys("UTF-8", $opt_query_filter);
+        $opt_list_files_filter=CXRecode::from_sys("UTF-8", $opt_list_files_filter);
+        $opt_install_filter=CXRecode::from_sys("UTF-8", $opt_install_filter);
+        $opt_uninstall_filter=CXRecode::from_sys("UTF-8", $opt_uninstall_filter);
+        $opt_description=CXRecode::from_sys("UTF-8", $opt_description);
+        $opt_command=CXRecode::from_sys("UTF-8", $opt_command);
+        $opt_icon=CXRecode::from_sys("UTF-8", $opt_icon);
+        $opt_shortcut=CXRecode::from_sys("UTF-8", $opt_shortcut);
+        $opt_menu_root=CXRecode::from_sys("UTF-8", $opt_menu_root);
+        $opt_menu_strip=CXRecode::from_sys("UTF-8", $opt_menu_strip);
+        $opt_arch=CXRecode::from_sys("UTF-8", $opt_arch);
+        $opt_arch_filter=CXRecode::from_sys("UTF-8", $opt_arch_filter);
+    }
+    if ($opt_crossover)
+    {
+        $opt_conf="$ENV{CX_ROOT}/share/crossover/data/crossover.menu" if (!defined $opt_conf);
+        $opt_tag=CXUtils::get_product_id() . "-0" if (!defined $opt_tag);
+        $opt_scope="managed";
+        delete $ENV{CX_BOTTLE};
+    }
+
+    $opt_delete=1 if ($opt_purge);
+
+    my $cmd_count=0;
+    $cmd_count++ if (defined $opt_query);
+    $cmd_count++ if (defined $opt_list_files);
+    $cmd_count++ if (defined $opt_start);
+    my $read_only_count=$cmd_count;
+    $cmd_count++ if (defined $opt_removeall);
+    $cmd_count++ if (defined $opt_create);
+    $cmd_count++ if (defined $opt_mode and !$opt_sync);
+    $cmd_count++ if (defined $opt_arch and !$opt_create);
+    $cmd_count++ if (defined $opt_sync);
+    $only_non_empty=1 if ($cmd_count == 0);
+    $cmd_count++ if (defined $opt_install);
+    $cmd_count++ if (defined $opt_uninstall);
+    $cmd_count++ if (defined $opt_delete);
+    $read_only=1 if ($read_only_count == $cmd_count);
+    $only_removeall=1 if ($cmd_count == 1 and defined $opt_removeall);
+    if ($cmd_count == 0)
+    {
+        cxerr("you must specify the operation to perform\n");
+        $usage=2;
+    }
+    elsif (defined $opt_start and $cmd_count > 1)
+    {
+        cxerr("--start is incompatible with --create, --delete, --query, --install, --uninstall, --removeall, --mode, --sync, and --arch\n");
+        $usage=2;
+    }
+    elsif ($opt_sync)
+    {
+        if ($opt_delete)
+        {
+            cxerr("--sync is incompatible with --delete\n");
+            $usage=2;
+        }
+        if ($opt_sync_uninstall_none and ($opt_uninstall or $opt_removeall))
+        {
+            cxerr("--sync-uninstall-none is incompatible with --uninstall and --removeall\n");
+            $usage=2;
+        }
+        if ($opt_sync_install_none and $opt_install)
+        {
+            cxerr("--sync-install-none is incompatible with --install\n");
+            $usage=2;
+        }
+    }
+    elsif ($opt_sync_uninstall_none or $opt_sync_install_none)
+    {
+        cxerr("--sync-uninstall-none and --sync-install-none can only be used with --sync\n");
+        $usage=2;
+    }
+    if (($opt_create or $opt_sync) and
+        (defined $opt_filter or defined $opt_delete_filter or
+         defined $opt_mode_filter or defined $opt_query_filter or
+         defined $opt_list_files_filter or
+         defined $opt_install_filter or defined $opt_uninstall_filter or
+         defined $opt_arch_filter))
+    {
+        cxerr("--create and --sync are incompatible with the --filter options\n");
+        $usage=2;
+    }
+    if (!defined $opt_start and $opt_wait_children)
+    {
+        cxerr("--wait-children can only be used with --start\n");
+        $usage=2;
+    }
+    if (!defined $opt_start and $opt_enable_alt_loader)
+    {
+        cxerr("--enable-alt-loader can only be used with --start\n");
+        $usage=2;
+    }
+    if (defined $opt_mode and $opt_mode !~ /^(?:install|ignore)$/i)
+    {
+        cxerr("unknown install mode '$opt_mode'\n");
+        $usage=2;
+    }
+    if (defined $opt_arch)
+    {
+        $opt_arch=~ tr/A-Z/a-z/;
+        if ($opt_arch !~ /^(?:i386|x86_64)$/)
+        {
+            cxerr("unknown architecture '$opt_arch'\n");
+            $usage=2;
+        }
+    }
+    if (defined $opt_create)
+    {
+        if (!check_menu_path($opt_create))
+        {
+            $usage=2;
+        }
+        $opt_type="raw" if (!$opt_type);
+        $opt_type=~ tr/A-Z/a-z/;
+        if ($opt_type !~ /^(?:raw|windows)$/)
+        {
+            cxerr("unknown menu type '$opt_type'\n");
+            $usage=2;
+        }
+    }
+    elsif (defined $opt_description or defined $opt_type or
+           defined $opt_command or defined $opt_icon or
+           defined $opt_shortcut)
+    {
+        cxerr("--description, --type, --command, --icon, and --shortcut can only be used with --create\n");
+        $usage=2;
+    }
+    if (defined $opt_delete_filter and !defined $opt_delete)
+    {
+        cxerr("--delete-filter can only be used with --delete\n");
+        $usage=2;
+    }
+    if (defined $opt_mode_filter and !defined $opt_mode)
+    {
+        cxerr("--mode-filter can only be used with --mode\n");
+        $usage=2;
+    }
+    if (defined $opt_query_filter and !defined $opt_query)
+    {
+        cxerr("--query-filter can only be used with --query\n");
+        $usage=2;
+    }
+    if (defined $opt_list_files_filter and !defined $opt_list_files)
+    {
+        cxerr("--list-files-filter can only be used with --list-files\n");
+        $usage=2;
+    }
+    if ( defined $opt_install_filter and !defined $opt_install)
+    {
+        cxerr("--install-filter can only be used with --install\n");
+        $usage=2;
+    }
+    if (defined $opt_uninstall_filter and !defined $opt_uninstall)
+    {
+        cxerr("--uninstall-filter can only be used with --uninstall\n");
+        $usage=2;
+    }
+    if (defined $opt_arch_filter and !defined $opt_arch)
+    {
+        cxerr("--arch-filter can only be used with --arch\n");
+        $usage=2;
+    }
+    if (defined $opt_filter)
+    {
+        if (!defined $opt_delete and !defined $opt_mode and
+            !defined $opt_query and !defined $opt_list_files and
+            !defined $opt_install and !defined $opt_uninstall and
+            !defined $opt_arch)
+        {
+            cxerr("--filter can only be used with --install, --uninstall, --mode, --query, --list-files, --start, --delete and --arch\n");
+            $usage=2;
+        }
+        if (defined $opt_delete_filter or defined $opt_mode_filter or
+            defined $opt_query_filter or defined $opt_list_files_filter or
+            defined $opt_install_filter or defined $opt_uninstall_filter or
+            defined $opt_arch_filter)
+        {
+            cxerr("--delete-filter, --mode-filter, --query-filter, --list-files-filter, --install-filter, --uninstall-filter and --arch-filter are incompatible with --filter\n");
+            $usage=2;
+        }
+        else
+        {
+            $opt_delete_filter=$opt_mode_filter=$opt_query_filter=$opt_list_files_filter=$opt_install_filter=$opt_uninstall_filter=$opt_arch_filter=$opt_filter;
+        }
+    }
+    if (defined $opt_destdir and !defined $opt_query and
+        !defined $opt_list_files and !defined $opt_install and
+        !defined $opt_uninstall and !defined $opt_removeall)
+    {
+        cxerr("--destdir can only be used with --query, --list-files, --install, --uninstall and --removeall\n");
+        $usage=2;
+    }
+    $opt_destdir ||= "";
+    if (defined $opt_ro_desktopdata and !defined $opt_install and
+        !defined $opt_uninstall and !defined $opt_removeall)
+    {
+        cxerr("--ro-desktopdata must be used with one of --install, --uninstall or --removeall\n");
+        $usage=2;
+    }
+    if (defined $opt_tag and $opt_tag eq "")
+    {
+        cxerr("specifying an empty tag is not allowed\n");
+        $usage=2;
+    }
+    if (defined $opt_pattern)
+    {
+        if (!defined $opt_removeall)
+        {
+            cxerr("--pattern can only be used with --removeall\n");
+            $usage=2;
+        }
+        if (length($opt_pattern) < 4)
+        {
+            cxerr("the pattern must be at least 4 characters long\n");
+            $usage=2;
+        }
+    }
+    if (defined $opt_scope)
+    {
+        $opt_scope=~ tr/A-Z/a-z/;
+        if ($opt_scope !~ /^(?:managed|private)$/)
+        {
+            cxerr("unknown scope value '$opt_scope'\n");
+            $usage=2;
+        }
+    }
+    elsif (defined $opt_conf or ($only_removeall and defined $opt_pattern))
+    {
+        $opt_scope="private";
+    }
+    if (defined $opt_mmenu_never)
+    {
+        $opt_mmenu_never =~ s/^\s+//;
+        $opt_mmenu_never =~ s/\s+$//;
+        map { $mmenu_never{$_} = 1 } split(/:+/, $opt_mmenu_never);
+    }
+}
+
+
+# Determine and check wineprefix
+my $cxconfig;
+if (!defined $usage)
+{
+    require CXBottle;
+    $cxconfig=CXBottle::get_crossover_config();
+
+    $ENV{CX_BOTTLE}=$opt_bottle if (defined $opt_bottle);
+    $ENV{CX_BOTTLE}="default" if (!defined $ENV{CX_BOTTLE} and !defined $opt_conf and !($only_removeall and defined $opt_pattern));
+    if (defined $ENV{CX_BOTTLE})
+    {
+        # Some desktop plugins need the WINEPREFIX
+        my ($scope)=CXBottle::setup_bottle_wineprefix($opt_scope);
+        if (!defined $scope)
+        {
+            cxerr($@);
+            $usage=1;
+        }
+        else
+        {
+            CXBottle::setup_bottle_environment($cxconfig, $ENV{WINEPREFIX});
+            if ((!$read_only or !$opt_start) and
+                CXBottle::get_bottle_mode($cxconfig, $opt_scope) eq "stub")
+            {
+                cxerr("cannot operate on the '$ENV{CX_BOTTLE}' stub bottle (missing --scope option?)\n");
+                $usage=1;
+            }
+            $opt_scope=$scope;
+        }
+    }
+    else
+    {
+        # Delete WINEPREFIX in case it is set in the user's environment
+        delete $ENV{WINEPREFIX};
+    }
+}
+
+
+# Print usage
+if (defined $usage)
+{
+    my $name0=cxname0();
+    if ($usage)
+    {
+        cxerr("try '$name0 --help' for more information\n");
+        exit $usage;
+    }
+    print "Usage: $name0 --sync [--bottle BOTTLE] [--mode MODE] [--verbose]\n";
+    print "or     $name0 --start MENU [--wait-children] [--enable-alt-loader FLAG]\n";
+    print "              [--bottle BOTTLE] [ARGS...]\n";
+    print "or     $name0 [--bottle BOTTLE] [--crossover] [--install] [--uninstall]\n";
+    print "              [--removeall [--pattern PATTERN]] [--mode MODE] [--arch ARCH] [--help]\n";
+    print "              [--create MENU [create-options]|--filter FILTER]\n";
+    print "              [--delete] [--purge] [--verbose] [advanced-options]\n";
+
+    print "\n";
+    print "Makes the Windows menus available to the native desktop environment and\n";
+    print "provides a command-line interface for managing these menus.\n";
+
+    print "\n";
+    print "Options:\n";
+    print "  --sync      Scans the bottle's Windows Start Menu and Desktop icons and\n";
+    print "              updates the menu list accordingly\n";
+    print "              New menus will receive the mode specified by the --mode option\n";
+    print "              and will be installed if appropriate. Obsolete menus will be\n";
+    print "              uninstalled and deleted\n";
+    print "    --sync-uninstall-none Instructs --sync not to uninstall and delete obsolete\n";
+    print "                menus\n";
+    print "    --sync-install-none Instructs --sync not to (re)install modified or new\n";
+    print "                menus\n";
+    print "  --start MENU Runs the specified menu entry\n";
+    print "    --wait-children Wait for the application and all its children to exit\n";
+    print "    --enable-alt-loader FLAG Enable the use of an alternative Wine loader\n";
+    print "    ARGS...   Arguments to pass to the menu entry being run\n";
+    print "  --bottle BOTTLE Use the specified bottle. If this option is not used,\n";
+    print "              fallback to \$CX_BOTTLE and then to 'default'\n";
+    print "  --crossover Sets the correct options for working on the CrossOver menu\n";
+    print "  --mode MODE Sets the menu install mode. If the install mode is 'install' the\n";
+    print "              menu will be installed by subsequent --install operations. If it\n";
+    print "              is set to 'ignore' it will be ignored by such operations\n";
+    print "    --mode-filter Specifies the menus to set the mode on. See --filter\n";
+    print "  --install   Exports the menus so they can be used from the supported\n";
+    print "              native desktop environments (e.g. GNOME, KDE)\n";
+    print "              This operation ignores menus that have their install mode set\n";
+    print "              to 'ignore'\n";
+    print "    --install-filter Specifies the menus to install. See --filter\n";
+    print "  --uninstall Removes the menus from the desktop environments, even if their\n";
+    print "              install mode is 'ignore'\n";
+    print "    --uninstall-filter Specifies the menus to uninstall. See --filter\n";
+    print "  --arch ARCH Sets the architecture of the executable that the menu will run,\n";
+    print "              to inform other subsystems; valid values are 'i386' or 'x86_64'\n";
+    print "    --arch-filter Specifies the menus to set the arch on. See --filter\n";
+    print "  --removeall Each bottle has a unique id which is used to tag its menus\n";
+    print "              This option uninstalls any menu bearing the bottle's id\n";
+    print "    --pattern PATTERN Specifies that --removeall should uninstall any menu\n";
+    print "                that bears an id matching the specified regular expression\n";
+    print "  --help, -h  Shows this help message\n";
+
+    print "\n";
+    print "Advanced options:\n";
+    print "  --create MENU Creates the specified menu. The menu is specified as a\n";
+    print "              slash-separated path starting with either StartMenu for regular\n";
+    print "              menus or Desktop for desktop icons\n";
+    print "              To create a menu folder, add a trailing slash\n";
+    print "    --description DESCRIPTION The menu description\n";
+    print "    --type TYPE Either 'windows' for Windows '.lnk' files, or 'raw' for\n";
+    print "                arbitrary menus\n";
+    print "    --icon ICONFILE Native path to the XPM icon file. Environment variables\n";
+    print "                are allowed using the \${VAR} syntax\n";
+    print "    --command COMMAND The command to run for this menu. Environment variables\n";
+    print "                are allowed using the \${VAR} syntax\n";
+    print "    --shortcut SHORTNAME If set, a command line script by that name will be\n";
+    print "                created\n";
+    print "  --filter FILTER Specifies the menus to operate on. FILTER is a\n";
+    print "              colon-separated list of menus, where each menu is identified by\n";
+    print "              a path as described in the --create option. By default the\n";
+    print "              operations apply to all known menus\n";
+    print "  --menu-root ROOT Specifies where to create the menus\n";
+    print "  --delete    Deletes the menus. Note that this does not uninstall them\n";
+    print "    --delete-filter Specifies the menus to delete. See --filter\n";
+    print "  --purge     Same as --delete, but also deletes the corresponding Windows menu\n";
+    print "  --query     Outputs the list of supported menuing systems for both 'Start\n";
+    print "              Menus' and 'Desktop' icons. Then outputs which menuing systems\n";
+    print "              each menu is installed in\n";
+    print "    --query-filter Specifies the menus to query. See --filter\n";
+    print "  --list-files Reports the files used by the menuing systems.\n";
+    print "    --list-files-filter Restricts the menuing system files reporting to those";
+    print "              of the specified menus. See --filter\n";
+    print "  --destdir DIR Prefixes the specified directory to all created paths\n";
+    print "  --ignorelist LIST Specifies a colon-separated list of menuing systems to\n";
+    print "              ignore. If the list starts with a '+' then it is appended to\n";
+    print "              the 'MenuIgnoreList' setting. Otherwise it overrides it\n";
+    print "  --mmenu-never LIST Specifies a colon-separated list of menu entries to omit\n";
+    print "              from CrossOver's own menu system. (Note: this option\n";
+    print "              controls CrossOver's menu rather than desktop integration.)\n";
+    print "  --utf8      Specifies that the script parameters are in UTF-8, regardless of\n";
+    print "              the default system encoding\n";
+    print "  --conf FILE Specifies an alternative file containing the menu list\n";
+    print "  --tag TAG   Specifies an alternative tag to be used for identifying the menus\n";
+    print "  --ro-desktopdata Treat the desktopdata / bottle directory as read-only\n";
+    print "  --scope SCOPE Specifies whether to look for a managed bottle or a private\n";
+    print "              one\n";
+    print "  --menu-scope MSCOPE Setting this should almost never be needed as it defaults\n";
+    print "              to the scope of the bottle. If set to managed and given\n";
+    print "              administrative rights, the menus will be installed in a\n";
+    print "              system-wide location. Otherwise they will be installed for use in\n";
+    print "              the current account only\n";
+    print "  --verbose   Output more information about what is going on\n";
+    exit 0;
+}
+
+
+# Because of user installs and builtin bottles the effective scope of the
+# menus may be different from the bottle (or other assumed) scope.
+if (!defined $opt_menu_scope)
+{
+    $opt_menu_scope="private";
+    if ($opt_scope eq "managed")
+    {
+        my $ref_dir=$ENV{WINEPREFIX} || $ENV{CX_ROOT};
+        $opt_menu_scope="managed" if ((stat($ref_dir))[4] == 0);
+    }
+}
+if ($opt_menu_scope eq "managed")
+{
+    # Make sure the menus are going to be world-readable
+    umask(umask() & ~0055) if ($> == 0);
+}
+
+my $bottle_mode=$cxconfig->get("Bottle", "MenuMode", "");
+$bottle_mode =~ tr/A-Z/a-z/;
+$bottle_mode="ignore" if ($bottle_mode !~ /^(?:install|ignore|frozen)$/);
+if ($bottle_mode eq "frozen" and !$read_only)
+{
+    cxerr("installing, uninstalling or modifying the bottle's menus is forbidden because they are frozen\n");
+    exit 1;
+}
+
+my $rc=0;
+my $lock_conf_name;
+if (defined $ENV{WINEPREFIX})
+{
+    require CXBottle;
+    if (!$only_removeall and
+        !CXBottle::update_bottle($cxconfig, $ENV{WINEPREFIX}, $opt_scope))
+    {
+        cxerr("unable to update the '$ENV{CX_BOTTLE}' bottle\n");
+        exit 1;
+    }
+    if (!defined $opt_conf)
+    {
+        $lock_conf_name=CXBottle::get_bottle_lock_prefix($ENV{WINEPREFIX}) . "-cxmenu.conf";
+        $opt_conf="$ENV{WINEPREFIX}/cxmenu.conf";
+    }
+
+    if (($opt_install or $opt_uninstall or $opt_removeall) and
+        !$opt_ro_desktopdata and !$opt_create and
+        !defined $opt_install_filter and !defined $opt_uninstall_filter)
+    {
+        my $mode=($opt_install ? "install" : "ignore");
+        if ($mode ne $bottle_mode)
+        {
+            # Serialize cxbottle.conf modifications
+            my $lock=CXBottle::lock_bottle($ENV{WINEPREFIX});
+
+            require CXRWConfig;
+            my $cxbottle=CXRWConfig->new("$ENV{WINEPREFIX}/cxbottle.conf");
+            $cxbottle->set("Bottle", "MenuMode", $mode);
+            if (!$cxbottle->save())
+            {
+                cxerr("unable to save '$ENV{WINEPREFIX}/cxbottle.conf': $!\n");
+                $rc=1;
+            }
+
+            CXUtils::cxunlock($lock);
+        }
+    }
+}
+
+my ($cxmenu, $lock_conf);
+ if (defined $opt_conf)
+{
+    if ($opt_create or $opt_mode or $opt_sync or $opt_delete or $opt_arch)
+    {
+        # Serialize modifications to the cxmenu.conf file
+        # To avoid deadlocks only take this lock after upgrading the bottle
+        $lock_conf_name=cxbasename($opt_conf) if (!defined $lock_conf_name);
+        $lock_conf=CXUtils::cxlock($lock_conf_name);
+        if (!defined $lock_conf)
+        {
+            cxwarn("$@\n");
+            cxwarn("locking failed, continuing without a lock\n");
+        }
+    }
+    require CXRWConfig;
+    $cxmenu=CXRWConfig->new($opt_conf);
+}
+if ($only_non_empty and !$cxmenu->get_section_names())
+{
+    # The file is empty so skip on loading the plugins.
+    # There is nothing to do anyway.
+    CXUtils::cxunlock($lock_conf);
+    exit $rc;
+}
+
+# Finally do the work
+if ($opt_create)
+{
+    my $section=$cxmenu->get_section($opt_create);
+    if ($section)
+    {
+        # Remove all the old fields so the old menu is completely overwritten
+        $section->remove_all();
+    }
+    else
+    {
+        $section=$cxmenu->append_section($opt_create);
+    }
+    $section->set("Description", $opt_description) if (defined $opt_description);
+    $section->set("Type", $opt_type);
+    $section->set("Command", $opt_command) if (defined $opt_command);
+    $section->set("Icon", $opt_icon) if (defined $opt_icon);
+    $section->set("Shortcut", $opt_shortcut) if (defined $opt_shortcut);
+    $section->set("Mode", $opt_mode || "install");
+    $section->set("Arch", $opt_arch) if (defined $opt_arch);
+
+    # The other operations will work on this one menu
+    $opt_delete_filter=$opt_mode_filter=$opt_query_filter=$opt_list_files_filter=$opt_install_filter=$opt_uninstall_filter=$opt_arch_filter=$opt_create;
+}
+elsif ($opt_sync)
+{
+    if (!defined $ENV{WINEPREFIX})
+    {
+        cxerr("no bottle was specified for the --sync option\n");
+        CXUtils::cxunlock($lock_conf);
+        exit 1;
+    }
+
+    # Recreate the icon directory from scratch
+    # to prevent obsolete icons from accumulating
+    if (opendir(my $dh, "$ENV{WINEPREFIX}/windata"))
+    {
+        foreach my $dentry (readdir $dh)
+        {
+            if ($dentry =~ /^(?:Desktop|StartMenu|cxmenu)/)
+            {
+                require File::Path;
+                File::Path::rmtree("$ENV{WINEPREFIX}/windata/$dentry");
+            }
+        }
+        closedir($dh);
+    }
+
+    my %to_delete;
+    foreach my $name ($cxmenu->get_section_names())
+    {
+        my $type=$cxmenu->get($name, "Type", "raw");
+        $to_delete{$name}=1 if ($type =~ /^windows$/i);
+    }
+
+    # Scan the Windows menus
+    my $start=CXLog::cxtime();
+    my $cmd=shquote_string("$ENV{CX_ROOT}/bin/wine") .
+            " --scope " . $opt_scope .
+            " --no-convert --wl-app winemenubuilder.exe --cx-dump-menus --cx-all-menus |";
+    require CXConfig;
+    my $cxscan=CXConfig->new($cmd);
+    cxlog("-> rc=$?  (took ", CXLog::cxtime()-$start, " seconds)\n");
+    if ($? != 0)
+    {
+        cxerr("an error occurred while scanning the Windows menus\n");
+        if ($? != 256)
+        {
+            CXUtils::cxunlock($lock_conf);
+            exit 1;
+        }
+        $rc=1;
+    }
+
+    # Update cxmenu.conf
+    $opt_mode="ignore" if (!$opt_mode);
+    if ($bottle_mode ne "install" or $opt_install)
+    {
+        $opt_sync_install_none=1;
+    }
+    else
+    {
+        $opt_install_filter="";
+    }
+
+    foreach my $lnkfile (sort $cxscan->get_section_names())
+    {
+        my $scanned=$cxscan->get_section($lnkfile);
+        my $menu=CXMenu::wineshelllink2cxmenu($scanned->get("IsMenu"),
+                                              $scanned->get("Root"), $lnkfile,
+                                              $scanned->get("Path"),
+                                              $scanned->get("Args"),
+                                              $scanned->get("Icon"));
+        if (!$menu)
+        {
+            cxerr($@);
+            next;
+        }
+        elsif ($@)
+        {
+            cxwarn($@);
+        }
+        my ($modified, $mode);
+        my $section=$cxmenu->get_section($menu->{fullpath});
+        if ($section)
+        {
+            # Don't use $menu->{fullpath} here because it may have
+            # a different case.
+            delete $to_delete{$section->get_name()};
+        }
+        else
+        {
+            $section=$cxmenu->append_section($menu->{fullpath});
+            $mode=$opt_mode;
+            $section->set("Mode", $mode);
+            $modified=1;
+        }
+
+        my $basename = $section->get_name();
+        $basename =~ s%^.*[/\\]%%;
+        if ($mmenu_never{$basename})
+        {
+            $section->set("IncludeInMainMenu", "neverinclude");
+        }
+
+        $modified|=update_field($section, "Type", "Windows");
+        $modified|=update_field($section, "Description", $scanned->get("Description"));
+        $modified|=update_field($section, "Shortcut", $menu->{shortcut});
+        $modified|=update_field($section, "Icon", $menu->{icon});
+        $modified|=update_field($section, "StartupWMClass", $menu->{startupwmclass});
+        $modified|=update_field($section, "Arch", $scanned->get("Arch"));
+        if ($modified and !$opt_sync_install_none)
+        {
+            $mode=$section->get("Mode", "ignore") if (!defined $mode);
+            $opt_install_filter.="$menu->{fullpath}:";
+        }
+    }
+
+    # Schedule obsolete menus for deletion
+    if (%to_delete)
+    {
+        $opt_delete_filter=join(":", keys %to_delete);
+        $opt_delete=1;
+        if ($bottle_mode eq "install" and !$opt_sync_uninstall_none and
+            !$opt_uninstall and !$opt_removeall)
+        {
+            $opt_uninstall_filter=$opt_delete_filter;
+            $opt_uninstall=1;
+        }
+    }
+    if ($opt_install_filter)
+    {
+        $opt_install=1;
+    }
+}
+elsif ($opt_mode)
+{
+    foreach my $menu (@{get_filter_list($cxmenu, $opt_mode_filter)})
+    {
+        my $section=$cxmenu->get_section($menu);
+        if ($section)
+        {
+            $section->set("Mode", $opt_mode);
+            cxlog("Set install mode of '$menu' to '$opt_mode'\n");
+        }
+        else
+        {
+            cxerr("menu '$menu' not found\n");
+            $rc=1;
+        }
+    }
+}
+elsif ($opt_arch)
+{
+    foreach my $menu (@{get_filter_list($cxmenu, $opt_arch_filter)})
+    {
+        my $section=$cxmenu->get_section($menu);
+        if ($section)
+        {
+            $section->set("Arch", $opt_arch);
+            cxlog("Set architecture of '$menu' to '$opt_arch'\n");
+        }
+        else
+        {
+            cxerr("menu '$menu' not found\n");
+            $rc=1;
+        }
+    }
+}
+if (!$opt_delete)
+{
+    # Save and unlock the configuration file early
+    if (defined $cxmenu and !$cxmenu->save())
+    {
+        cxerr("unable to save '$opt_conf': $!\n");
+        $rc=1;
+    }
+    CXUtils::cxunlock($lock_conf);
+    $lock_conf=undef;
+}
+
+
+my $gui_info;
+my @plugins;
+if ($opt_query or $opt_list_files or $opt_install or $opt_uninstall or $opt_removeall)
+{
+    # Compute the 'MenuRoot'
+    if (!defined $opt_menu_root)
+    {
+        $opt_menu_root=$cxmenu->get("Settings", "MenuRoot") if ($cxmenu);
+        if (!defined $opt_menu_root)
+        {
+            $opt_menu_root=$cxconfig->get("Bottle", "MenuRoot");
+        }
+    }
+    $opt_menu_root=undef if (($opt_menu_root || "") =~ m!^/?$!);
+    if (defined $opt_menu_root)
+    {
+        if ($opt_menu_root =~ m!/\.*/!)
+        {
+            # Path contains stuff like '//', '/./', '/../', etc.
+            cxerr("the menu root contains an invalid path '$opt_menu_root'\n");
+            CXUtils::cxunlock($lock_conf);
+            exit 1;
+        }
+        if ($opt_menu_root !~ m!^/!)
+        {
+            $opt_menu_root = "/$opt_menu_root";
+            $opt_menu_root =~ s%/$%%;
+        }
+        if ($opt_crossover and
+            CXUtils::get_product_id() ne CXUtils::get_builtin_product_id())
+        {
+            $opt_menu_root.=" (" . CXUtils::get_product_id() . ")";
+        }
+    }
+    if (!defined $opt_menu_strip)
+    {
+        $opt_menu_strip=$cxmenu->get("Settings", "MenuStrip") if ($cxmenu);
+        if (!defined $opt_menu_strip)
+        {
+            $opt_menu_strip=$cxconfig->get("Bottle", "MenuStrip");
+        }
+    }
+    if (defined $opt_menu_strip and $opt_menu_strip !~ /^\d+$/)
+    {
+        cxerr("the menu strip count '$opt_menu_strip' is not a number\n");
+        CXUtils::cxunlock($lock_conf);
+        exit 1;
+    }
+
+    if (!defined $opt_tag and !($only_removeall and defined $opt_pattern))
+    {
+        if (defined $ENV{WINEPREFIX})
+        {
+            require CXBottle;
+            $opt_tag=CXBottle::get_bottle_tag($cxconfig);
+            if (!defined $opt_tag)
+            {
+                cxerr("unable to determine the tag of the $ENV{CX_BOTTLE} bottle\n");
+                CXUtils::cxunlock($lock_conf);
+                exit 1;
+            }
+        }
+        else
+        {
+            my $name0=cxname0();
+            cxerr("you must specify the tag identifying the menus\n");
+            cxerr("try '$name0 --help' for more information\n");
+            CXUtils::cxunlock($lock_conf);
+            exit 1;
+        }
+    }
+
+    # Build a centralised repository of cxmenu options relevant to plugins
+    require CXBottle;
+    my $cxoptions={
+        tag         => $opt_tag,
+        destdir     => $opt_destdir,
+        desktopdata => CXBottle::get_desktopdata_dir($opt_menu_scope, $opt_tag),
+        ro_desktopdata => $opt_ro_desktopdata,
+    };
+
+    # Grab the desktop configuration information
+    my $locate_gui="$ENV{CX_ROOT}/bin/locate_gui.sh";
+    if (!-f $locate_gui)
+    {
+        cxerr("'$locate_gui' does not exist\n");
+        CXUtils::cxunlock($lock_conf);
+        exit 1;
+    }
+    $locate_gui=shquote_string($locate_gui);
+    foreach my $line (cxbackquote("$locate_gui --scope $opt_menu_scope --menu", 1))
+    {
+        chomp $line;
+        $gui_info->{$1}=$2 if ($line =~ /^([^=]+)=(.*)$/);
+    }
+
+    # Setup the menuing-system blacklist
+    my %ignorehash;
+    if (!defined $opt_ignorelist or $opt_ignorelist =~ s/^[+]//)
+    {
+        my $ignorelist=$cxconfig->get("CrossOver", "MenuIgnoreList");
+        if (!defined $ignorelist or $ignorelist =~ s/^[+]//)
+        {
+            map { $ignorehash{$_}=1 if ($_ ne ""); } split /:+/, ($gui_info->{desktop_menu_ignore_list} || "");
+        }
+        map { $ignorehash{$_}=1 if ($_ ne ""); } split /:+/, ($ignorelist || "");
+    }
+    map { $ignorehash{$_}=1 if ($_ ne ""); } split /:+/, ($opt_ignorelist || "");
+    # These cannot be blacklisted
+    delete $ignorehash{"CXMenuWindows/"};
+    delete $ignorehash{"CXMenuCheck/"};
+
+    # Load the desktop plugins
+    foreach my $plugin (@desktop_plugins)
+    {
+        if ($ignorehash{$plugin})
+        {
+            cxlog("Ignoring menu plugin '$plugin'\n");
+            next;
+        }
+        eval "use $plugin;";
+        if ($@)
+        {
+            cxwarn("unable to load '$plugin', ignoring it\n");
+            cxlog("$@\n");
+            next;
+        }
+        foreach my $instance ($plugin->detect($cxoptions, $cxconfig, $gui_info))
+        {
+            my $id=$instance->id();
+            if ($ignorehash{$id})
+            {
+                cxlog("Ignoring menuing system '$id'\n");
+            }
+            else
+            {
+                cxlog("Registering menuing system '$id'\n");
+                push @plugins, $instance;
+            }
+        }
+    }
+}
+
+if ($opt_removeall)
+{
+    my $start=CXLog::cxtime();
+    $opt_pattern="$opt_tag\$" if (!defined $opt_pattern);
+    foreach my $plugin (@plugins)
+    {
+        if (CXLog::is_on())
+        {
+            cxlog("** Removeall '$opt_pattern' from ", $plugin->id(), "\n");
+        }
+        my $r=$plugin->removeall($opt_pattern);
+        if ($r <= 0)
+        {
+            $rc=1;
+            last if ($r < 0);
+        }
+    }
+    cxlog("-> Removeall took ", CXLog::cxtime()-$start, " seconds\n");
+}
+
+if ($opt_uninstall)
+{
+    my $start=CXLog::cxtime();
+    foreach my $path (@{get_filter_list($cxmenu, $opt_uninstall_filter)})
+    {
+        my $components=path_to_components($path, $cxconfig, $opt_menu_root, $opt_menu_strip, $opt_tag);
+        next if (!defined $components);
+
+        # Transfer extra information from the menu file if possible
+        my $menu=@$components[-1];
+        my $section=$cxmenu->get_section($path);
+        if ($section)
+        {
+            $menu->{type}=$section->get("Type", "raw");
+            $menu->{type}=~ tr/A-Z/a-z/;
+            $menu->{shortcut}=$section->get("Shortcut", "");
+        }
+        else
+        {
+            $menu->{type}="raw";
+        }
+
+        foreach my $plugin (@plugins)
+        {
+            if (CXLog::is_on())
+            {
+                cxlog("** Uninstalling '$path' from ", $plugin->id(), "\n");
+            }
+            my $r=$plugin->uninstall($components);
+            if ($r <= 0)
+            {
+                $rc=1;
+                last if ($r < 0);
+            }
+        }
+    }
+    cxlog("-> Uninstall took ", CXLog::cxtime()-$start, " seconds\n");
+}
+
+if (defined $opt_start)
+{
+    require CXMenuWindows;
+    cxlog("Starting '$opt_start'\n");
+    my $section=$cxmenu->get_section($opt_start);
+    if (!$section)
+    {
+        cxerr("menu '$opt_start' not found\n");
+        exit 1;
+    }
+    if ($opt_start =~ m!/$!)
+    {
+        cxerr("'$opt_start': cannot start menu folders\n");
+        exit 1;
+    }
+
+    my $type=$section->get("Type", "raw");
+    $type=~ tr/A-Z/a-z/;
+
+    my $command;
+    if ($type eq "windows")
+    {
+        my $menu={rawpath   => $opt_start};
+        $command=CXMenuWindows::get_command($menu, !$opt_wait_children);
+        $command.=" --enable-alt-loader $opt_enable_alt_loader" if (defined $command and $opt_enable_alt_loader);
+    }
+    else
+    {
+        $command=expand_cmdline($section->get("Command", ""));
+    }
+    if (!defined $command)
+    {
+        cxerr("no command found for '$opt_start'\n");
+        exit 1;
+    }
+
+    $command.=" " . CXUtils::argv2shcmd(@ARGV) if (@ARGV);
+    $command.=" &" if (!$opt_wait_children);
+    cxexec($command);
+    exit 1;
+}
+
+if ($opt_delete)
+{
+    foreach my $path (@{get_filter_list($cxmenu, $opt_delete_filter)})
+    {
+        cxlog($opt_purge ? "Purging" : "Deleting", " menu '$path'\n");
+        my $section=$cxmenu->get_section($path);
+        next if (!$section);
+
+        if ($opt_purge and defined $ENV{WINEPREFIX})
+        {
+            my $type=$section->get("Type", "raw");
+            $type=~ tr/A-Z/a-z/;
+            require CXMenuWindows;
+            if ($type eq "windows" and !CXMenuWindows::delete($path))
+            {
+                cxwarn("unable to purge the lnk file for '$path'\n");
+            }
+        }
+        $cxmenu->remove_section($path);
+        # An icon can be shared by multiple menus so don't delete them.
+    }
+
+    # Would have been saved much earlier if $opt_delete was not set
+    if (defined $cxmenu and !$cxmenu->save())
+    {
+        cxerr("unable to save '$opt_conf': $!\n");
+        $rc=1;
+    }
+    CXUtils::cxunlock($lock_conf);
+}
+
+if ($opt_install)
+{
+    my $start=CXLog::cxtime();
+    my $folder_icon=CXMenu::get_default_icon(1);
+    foreach my $path (@{get_filter_list($cxmenu, $opt_install_filter)})
+    {
+        my $section=$cxmenu->get_section($path);
+        my $mode=$section->get("Mode") if (defined $section);
+        if (!defined $mode or $mode !~ /^install$/i)
+        {
+            cxlog("Ignoring '$path'\n");
+            next;
+        }
+
+        my $components=path_to_components($path, $cxconfig, $opt_menu_root, $opt_menu_strip, $opt_tag);
+        next if (!defined $components);
+
+        # Transfer extra information from the menu file
+        my $menu=@$components[-1];
+        $menu->{type}=$section->get("Type", "raw");
+        $menu->{type}=~ tr/A-Z/a-z/;
+        $menu->{description}=$section->get("Description", "");
+        $menu->{startupwmclass}=$section->get("StartupWMClass", undef);
+        $menu->{shortcut}=$section->get("Shortcut", "");
+        $menu->{xdgcategories}=$section->get("XDGCategories");
+        $menu->{arch}=$section->get("Arch", "");
+        $menu->{localize}=$section->get("Localize");
+        if (!defined $menu->{localize})
+        {
+            $menu->{localize}=$auto_localize{$menu->{name}} || "";
+        }
+
+        $menu->{command}=expand_cmdline($section->get("Command", ""));
+        $menu->{icon}=expand_string($section->get("Icon", ""));
+        if ($menu->{icon} eq "")
+        {
+            $menu->{icon}=CXMenu::get_default_icon($menu->{is_dir});
+            $menu->{icon_root}="$ENV{CX_ROOT}/share/icons";
+        }
+
+        foreach my $component (@$components)
+        {
+            last if ($component == $menu);
+            $component->{icon}=$folder_icon;
+            $component->{icon_root}="$ENV{CX_ROOT}/share/icons";
+            $component->{localize}=$auto_localize{$component->{name}} || "";
+        }
+
+        # Proceed to the installation
+        foreach my $plugin (@plugins)
+        {
+            if (CXLog::is_on())
+            {
+                cxlog("** Installing '$path' to ", $plugin->id(), "\n");
+            }
+            my $r=$plugin->install($components);
+            if ($r <= 0)
+            {
+                $rc=1;
+                last if ($r < 0);
+            }
+        }
+    }
+    cxlog("-> Install took ", CXLog::cxtime()-$start, " seconds\n");
+}
+
+if ($opt_query)
+{
+    my $start=CXLog::cxtime();
+    my (@menu_ids, @desktop_ids);
+    foreach my $plugin (@plugins)
+    {
+        my ($menu, $desktop)=$plugin->query(undef);
+        push @menu_ids, $menu if ($menu ne "");
+        push @desktop_ids, $desktop if ($desktop ne "");
+    }
+    print "[StartMenu/]\n";
+    print "IDs=", join(":", @menu_ids), "\n";
+    print "[Desktop/]\n";
+    print "IDs=", join(":", @desktop_ids), "\n";
+
+    foreach my $path (@{get_filter_list($cxmenu, $opt_query_filter)})
+    {
+        my $components=path_to_components($path, $cxconfig, $opt_menu_root, $opt_menu_strip, $opt_tag);
+        next if (!defined $components);
+
+        # Transfer extra information from the menu file if possible
+        my $menu=@$components[-1];
+        my $section=$cxmenu->get_section($path);
+        if ($section)
+        {
+            $menu->{type}=$section->get("Type", "raw");
+            $menu->{type}=~ tr/A-Z/a-z/;
+            $menu->{shortcut}=$section->get("Shortcut", "");
+        }
+        else
+        {
+            $menu->{type}="raw";
+        }
+
+        print "[$path]\n";
+        my @ids;
+        foreach my $plugin (@plugins)
+        {
+            if (CXLog::is_on())
+            {
+                cxlog("** Querying '$path' in ", $plugin->id(), "\n");
+            }
+            my $r=$plugin->query($components);
+            if ($r eq "-1")
+            {
+                $rc=1;
+                last;
+            }
+            if ($r eq "0")
+            {
+                $rc=1;
+                next;
+            }
+            push @ids, $r if ($r ne "");
+        }
+        print "IDs=", join(":", @ids), "\n";
+    }
+    cxlog("-> Query took ", CXLog::cxtime()-$start, " seconds\n");
+}
+
+if ($opt_list_files)
+{
+    my $first=1;
+    my $start=CXLog::cxtime();
+    my $folder_icon=CXMenu::get_default_icon(1);
+    foreach my $plugin (@plugins)
+    {
+        my %plugin_files;
+        foreach my $path (@{get_filter_list($cxmenu, $opt_list_files_filter)})
+        {
+            my $components=path_to_components($path, $cxconfig, $opt_menu_root, $opt_menu_strip, $opt_tag);
+            next if (!defined $components);
+
+            # Transfer extra information from the menu file
+            my $menu=@$components[-1];
+            my $section=$cxmenu->get_section($path);
+            $menu->{type}=$section->get("Type", "raw");
+            $menu->{type}=~ tr/A-Z/a-z/;
+            $menu->{shortcut}=$section->get("Shortcut", "");
+            $menu->{icon}=expand_string($section->get("Icon", ""));
+            if ($menu->{icon} eq "")
+            {
+                $menu->{icon}=CXMenu::get_default_icon($menu->{is_dir});
+                $menu->{icon_root}="$ENV{CX_ROOT}/share/icons";
+            }
+
+            foreach my $component (@$components)
+            {
+                last if ($component == $menu);
+                $component->{icon}=$folder_icon;
+                $component->{icon_root}="$ENV{CX_ROOT}/share/icons";
+            }
+
+            my $files=$plugin->get_files($components);
+            if (!defined $files)
+            {
+                $rc=1;
+                last;
+            }
+            map { $plugin_files{$_}=1 } @$files;
+        }
+        if (%plugin_files)
+        {
+            print "\n" if (!$first);
+            print "[", $plugin->id(), "]\n";
+            for my $file (sort keys %plugin_files)
+            {
+                $file =~ s%//+%/%g;
+                print "\"", escape_string($file), "\"=\"1\"\n";
+            }
+            $first=undef;
+        }
+    }
+    cxlog("-> ListFiles took ", CXLog::cxtime()-$start, " seconds\n");
+}
+
+# Let the desktop plugins finish their work
+if (@plugins)
+{
+    my $start=CXLog::cxtime();
+    foreach my $plugin (@plugins)
+    {
+        if (CXLog::is_on())
+        {
+            cxlog("** Finalizing ", $plugin->id(), "\n");
+        }
+        $plugin->finalize();
+    }
+    cxlog("-> Finalization took ", CXLog::cxtime()-$start, " seconds\n");
+}
+
+exit $rc;

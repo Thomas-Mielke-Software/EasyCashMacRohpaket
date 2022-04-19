@@ -1,0 +1,28 @@
+# (c) Copyright 2005-2012. CodeWeavers, Inc.
+
+# Note that the 'Command' fields are not shell commands:
+# - Characters like dollars and backquotes have no special meaning.
+# - Strings of the form '${VARNAME}' are interpolated and escaped as
+#   appropriate.
+# - Arguments are space-separated though so arguments containing spaces
+#   should be quoted using double quotes.
+# - Double quotes and backslashes lose their special meaning if escaped with
+#   a backslash.
+
+
+[Settings]
+"MenuRoot" = "EasyCash&Tax"
+
+
+[StartMenu/]
+"Mode"        = "Install"
+
+
+
+[StartMenu/Uninstall EasyCash&Tax]
+"Description" = "Uninstall EasyCash&Tax"
+"StartupWMClass" = "cxuninstall"
+"Icon"        = "cxuninstall"
+"Command"     = "${CX_ROOT}/bin/cxuninstall"
+"Mode"        = "Install"
+"Localize"    = "1"

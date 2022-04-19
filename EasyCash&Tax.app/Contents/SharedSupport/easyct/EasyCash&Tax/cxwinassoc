@@ -1,0 +1,291 @@
+#!/usr/bin/perl
+# (c) Copyright 2003-2008, 2010-2011. CodeWeavers, Inc.
+use warnings;
+use strict;
+
+
+# Portable which(1) implementation
+sub cxwhich($$;$)
+{
+    my ($dirs, $app, $noexec)=@_;
+    if ($app =~ /^\//)
+    {
+        return $app if ((-x $app or $noexec) and -f $app);
+    }
+    elsif ($app =~ /\//)
+    {
+        require Cwd;
+        my $path=Cwd::cwd() . "/$app";
+        return $path if ((-x $path or $noexec) and -f $path);
+    }
+    else
+    {
+        foreach my $dir (split /:/, $dirs)
+        {
+            return "$dir/$app" if ($dir ne "" and (-x "$dir/$app" or $noexec) and -f "$dir/$app");
+        }
+    }
+    return undef;
+}
+
+# Fast dirname() implementation
+sub _cxdirname($)
+{
+    my ($path)=@_;
+    return undef if (!defined $path);
+    return "." if ($path !~ s!/+[^/]+/*$!!s);
+    return "/" if ($path eq "");
+    return $path;
+}
+
+# Locate where CrossOver is installed by looking for the directory
+# where the cxmenu script is located, unwinding symlinks on the way
+sub locate_cx_root(;$)
+{
+    my ($fallback)=@_;
+    my $argv0=cxwhich($ENV{PATH},$0);
+    $argv0=$0 if (!defined $argv0);
+    if ($argv0 !~ m+^/+)
+    {
+        require Cwd;
+        $argv0=Cwd::cwd() . "/$argv0";
+    }
+    my $dir=_cxdirname($argv0);
+    my $bindir=$dir;
+    $bindir =~ s%/lib$%/bin%;
+    while (!-x "$bindir/cxmenu" or !-f "$bindir/cxmenu")
+    {
+        last if (!-l $argv0);
+        $argv0=readlink($argv0);
+        $argv0="$dir/$argv0" if ($argv0 !~ m+^/+);
+        $dir=_cxdirname($argv0);
+        $bindir=$dir;
+        $bindir =~ s%/lib$%/bin%;
+    }
+    $bindir =~ s%/(?:\./)+%/%g;
+    $bindir =~ s%/\.$%%;
+    $ENV{CX_ROOT}=_cxdirname($bindir);
+    if ((!-x "$ENV{CX_ROOT}/bin/cxmenu" or !-f "$ENV{CX_ROOT}/bin/cxmenu") and
+        $fallback)
+    {
+        $ENV{CX_ROOT}=$fallback;
+    }
+    if (!-x "$ENV{CX_ROOT}/bin/cxmenu" or !-f "$ENV{CX_ROOT}/bin/cxmenu")
+    {
+        my $name0=$0;
+        $name0 =~ s+^.*/++;
+        print STDERR "$name0:error: could not find CrossOver in '$ENV{CX_ROOT}'\n";
+        exit 1;
+    }
+    return $ENV{CX_ROOT};
+}
+
+BEGIN {
+    unshift @INC, locate_cx_root() . "/lib/perl";
+}
+use CXLog;
+use CXUtils;
+
+my $wine="$ENV{CX_ROOT}/bin/wine";
+
+sub set_extension_class($$$)
+{
+    my ($extension, $class, $mime)=@_;
+
+    my $cmd=shquote_string($wine) . " --wl-app regedit.exe -";
+    cxlog("Running: $cmd\n");
+    my $regedit;
+    if (!open($regedit, "|$cmd"))
+    {
+        cxerr("unable to run $cmd\n");
+        exit 1;
+    }
+    print $regedit "[HKEY_LOCAL_MACHINE\\Software\\Classes\\$extension]\n";
+    print $regedit "\@=\"$class\"\n";
+    if (!defined $mime)
+    {
+        # Do nothing
+    }
+    elsif ($mime eq "")
+    {
+        print $regedit "\"Content Type\"=-\n";
+    }
+    else
+    {
+        print $regedit "\"Content Type\"=\"$mime\"\n";
+    }
+    close($regedit);
+}
+
+sub delete_class($)
+{
+    my ($class)=@_;
+    cxsystem($wine,"--wl-app","regedit.exe","/D","HKEY_LOCAL_MACHINE\\Software\\Classes\\$class");
+}
+
+sub create_class($$)
+{
+    my ($class, $args)=@_;
+
+    my $cmd=shquote_string($wine) . " --wl-app regedit.exe -";
+    cxlog("Running: $cmd\n");
+    my $regedit;
+    if (!open($regedit, "|$cmd"))
+    {
+        cxerr("unable to run $cmd\n");
+        exit 1;
+    }
+    print $regedit "[HKEY_LOCAL_MACHINE\\Software\\Classes\\$class]\n";
+    print $regedit "[HKEY_LOCAL_MACHINE\\Software\\Classes\\$class\\shell]\n";
+    print $regedit "[HKEY_LOCAL_MACHINE\\Software\\Classes\\$class\\shell\\Open]\n";
+    print $regedit "[HKEY_LOCAL_MACHINE\\Software\\Classes\\$class\\shell\\Open\\command]\n";
+    my $win_cmd="cxnative.exe -- ";
+    foreach my $arg (@$args)
+    {
+        $win_cmd .= " " . ($arg=~/\s/ ? shquote_string($arg) : $arg);
+    }
+    $win_cmd.=" \"%1\"" if ($win_cmd !~ /%1/);
+    print $regedit "\@=\"$win_cmd\"\n";
+    close($regedit);
+}
+
+
+# Parse the command line arguments
+my $class;
+my $delete_class;
+my $extension;
+my $mime;
+my $opt_bottle=$ENV{CX_BOTTLE} || "default";
+my $opt_scope;
+my $opt_verbose;
+my $opt_help;
+require CXOpts;
+my $cxopts=CXOpts->new(["stop_on_non_option"]);
+$cxopts->add_options(["class=s"        => \$class,
+                      "delete-class=s" => \$delete_class,
+                      "extension=s"    => \$extension,
+                      "mime=s"         => \$mime,
+                      "bottle=s"       => \$opt_bottle,
+                      "scope=s"        => \$opt_scope,
+                      "verbose!"       => \$opt_verbose,
+                      "?|h|help"       => \$opt_help
+                     ]);
+my $err=$cxopts->parse();
+CXLog::fdopen(2) if ($opt_verbose);
+$ENV{CX_BOTTLE}=$opt_bottle;
+
+
+# Validate the command line options
+my $usage;
+if ($err)
+{
+    cxerr("$err\n");
+    $usage=2;
+}
+elsif ($opt_help)
+{
+    $usage=0;
+}
+else
+{
+    $extension=".$extension" if (defined $extension and $extension !~ /^\./);
+    my $cmd_count=0;
+    $cmd_count++ if ($class);
+    $cmd_count++ if ($delete_class);
+    $cmd_count++ if (@ARGV);
+    if ($cmd_count>1)
+    {
+        cxerr("--class, --delete-class and COMMAND are mutually exclusive\n");
+        $usage=2;
+    }
+    elsif ($cmd_count==0)
+    {
+        cxerr("one of --class, --delete-class or COMMAND must be specified\n");
+        $usage=2;
+    }
+    elsif (defined $extension and defined $delete_class)
+    {
+        cxerr("--extension and --delete-class are mutually exclusive\n");
+        $usage=2;
+    }
+    if (defined $opt_scope)
+    {
+        $opt_scope=~ tr/A-Z/a-z/;
+        if ($opt_scope !~ /^(managed|private)$/)
+        {
+            cxerr("unknown scope value '$opt_scope'\n");
+            $usage=2;
+        }
+    }
+}
+
+
+# Determine and check wineprefix
+my $cxconfig;
+if (!defined $usage)
+{
+    require CXBottle;
+    $cxconfig=CXBottle::get_crossover_config();
+
+    my ($scope)=CXBottle::setup_bottle_wineprefix($opt_scope);
+    if (!defined $scope)
+    {
+        cxerr("cannot use the '$ENV{CX_BOTTLE}' bottle: $@\n");
+        $usage=1;
+    }
+}
+
+
+# Print usage
+if (defined $usage)
+{
+    my $name0=cxname0();
+    if ($usage)
+    {
+        cxerr("try '$name0 --help' for more information\n");
+        exit $usage;
+    }
+    print "Usage: $name0 --extension EXT COMMAND [options]\n";
+    print "or     $name0 --extension EXT --class CLASS [options]\n";
+    print "or     $name0 --delete-class CLASS [options]\n";
+
+    print "\n";
+    print "Creates a Windows association that starts a native application.\n";
+
+    print "\n";
+    print "Options:\n";
+    print "  --extension     The Windows extension to work on\n";
+    print "  --mime          The corresponding MIME type if any. Set to an empty string to\n";
+    print "                  remove a MIME type\n";
+    print "  --class CLASS   Associates the specified Windows extension with CLASS\n";
+    print "  --delete-class CLASS Deletes the specified class\n";
+    print "  COMMAND         The native command to associate the Windows extension with\n";
+    print "  --bottle BOTTLE Use the specified bottle. If this option is not used,\n";
+    print "                  fallback to \$CX_BOTTLE and then to 'default'\n";
+    print "  --scope SCOPE   If set to managed, the bottle will be looked up in the\n";
+    print "                  system-wide bottle locations, otherwise it will refer to a\n";
+    print "                  private bottle\n";
+    print "  --verbose       Output more information about what is going on\n";
+    print "  --help, -h      Shows this help message\n";
+    exit 0;
+}
+
+
+# Change the extension's class
+if (defined $class)
+{
+    set_extension_class($extension,$class,$mime);
+}
+elsif (defined $delete_class)
+{
+    delete_class($delete_class);
+}
+else
+{
+    $class="crossover$extension";
+    set_extension_class($extension,$class,$mime);
+    delete_class($class);
+    create_class($class,\@ARGV);
+}
+
+exit 0;

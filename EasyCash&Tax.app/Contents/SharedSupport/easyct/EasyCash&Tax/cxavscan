@@ -1,0 +1,287 @@
+#!/usr/bin/perl
+# (c) Copyright 2006-2017. CodeWeavers, Inc.
+use warnings;
+use strict;
+
+# Portable which(1) implementation
+sub cxwhich($$;$)
+{
+    my ($dirs, $app, $noexec)=@_;
+    if ($app =~ /^\//)
+    {
+        return $app if ((-x $app or $noexec) and -f $app);
+    }
+    elsif ($app =~ /\//)
+    {
+        require Cwd;
+        my $path=Cwd::cwd() . "/$app";
+        return $path if ((-x $path or $noexec) and -f $path);
+    }
+    else
+    {
+        foreach my $dir (split /:/, $dirs)
+        {
+            return "$dir/$app" if ($dir ne "" and (-x "$dir/$app" or $noexec) and -f "$dir/$app");
+        }
+    }
+    return undef;
+}
+
+# Fast dirname() implementation
+sub _cxdirname($)
+{
+    my ($path)=@_;
+    return undef if (!defined $path);
+    return "." if ($path !~ s!/+[^/]+/*$!!s);
+    return "/" if ($path eq "");
+    return $path;
+}
+
+# Locate where CrossOver is installed by looking for the directory
+# where the cxmenu script is located, unwinding symlinks on the way
+sub locate_cx_root(;$)
+{
+    my ($fallback)=@_;
+    my $argv0=cxwhich($ENV{PATH},$0);
+    $argv0=$0 if (!defined $argv0);
+    if ($argv0 !~ m+^/+)
+    {
+        require Cwd;
+        $argv0=Cwd::cwd() . "/$argv0";
+    }
+    my $dir=_cxdirname($argv0);
+    my $bindir=$dir;
+    $bindir =~ s%/lib$%/bin%;
+    while (!-x "$bindir/cxmenu" or !-f "$bindir/cxmenu")
+    {
+        last if (!-l $argv0);
+        $argv0=readlink($argv0);
+        $argv0="$dir/$argv0" if ($argv0 !~ m+^/+);
+        $dir=_cxdirname($argv0);
+        $bindir=$dir;
+        $bindir =~ s%/lib$%/bin%;
+    }
+    $bindir =~ s%/(?:\./)+%/%g;
+    $bindir =~ s%/\.$%%;
+    $ENV{CX_ROOT}=_cxdirname($bindir);
+    if ((!-x "$ENV{CX_ROOT}/bin/cxmenu" or !-f "$ENV{CX_ROOT}/bin/cxmenu") and
+        $fallback)
+    {
+        $ENV{CX_ROOT}=$fallback;
+    }
+    if (!-x "$ENV{CX_ROOT}/bin/cxmenu" or !-f "$ENV{CX_ROOT}/bin/cxmenu")
+    {
+        my $name0=$0;
+        $name0 =~ s+^.*/++;
+        print STDERR "$name0:error: could not find CrossOver in '$ENV{CX_ROOT}'\n";
+        exit 1;
+    }
+    return $ENV{CX_ROOT};
+}
+
+BEGIN {
+    unshift @INC, locate_cx_root() . "/lib/perl";
+}
+use CXLog;
+use CXUtils;
+
+# Process command-line options
+my $opt_quiet;
+my $opt_gui;
+my $opt_verbose;
+my $opt_help;
+require CXOpts;
+my $cxopts=CXOpts->new(["stop_on_unknown","stop_on_non_option"]);
+$cxopts->add_options(["quiet!"      => \$opt_quiet,
+                      "gui!"        => \$opt_gui,
+                      "verbose!"    => \$opt_verbose,
+                      "?|h|help"    => \$opt_help
+                     ]);
+my $err=$cxopts->parse();
+CXLog::fdopen(2) if ($opt_verbose);
+
+
+# Validate the command line options
+my $usage;
+if ($err)
+{
+    cxerr("$err\n");
+    $usage=2;
+}
+elsif ($opt_help)
+{
+    $usage=0;
+}
+elsif (!@ARGV)
+{
+    cxerr("you must specify the file to scan\n");
+    $usage=2;
+}
+
+
+# Print usage
+if (defined $usage)
+{
+    my $name0=cxname0();
+    if ($usage)
+    {
+        cxerr("try '$name0 --help' for more information\n");
+        exit $usage;
+    }
+    print "Usage: $name0 [--help] [--quiet] [--gui] [--verbose] FILE\n";
+
+    print "\n";
+    print "Invokes a native antivirus tool to scan the specified file for Windows viruses.\n";
+
+    print "\n";
+    print "Options:\n";
+    print "  FILE            The file to scan\n";
+    print "  --quiet         Don't display the 'Scanning...' message\n";
+    print "  --gui           In case a virus is detected or an error occurs, bring up a\n";
+    print "                  dialog to let the user ignore the issue\n";
+    print "  --verbose       Print more information about what is going on\n";
+    print "  --help, -h      Shows this help message\n";
+
+    print "\n";
+    print "The exit code is 0 if the file contains no virus, 1 if it is infected, 2 for usage errors, and 3 if no antivirus tool is available.\n";
+    exit 0;
+}
+
+my $pid;
+if (!$opt_quiet)
+{
+    $pid=cxwait(1, "--no-focus", "Scanning for viruses");
+}
+
+sub virus_dialog($)
+{
+    my ($output) = @_;
+    return 1 if (!$opt_gui);
+
+    my $choice = cxmessage("-title", "CrossOver Security Warning",
+                           "-buttons", "Continue:0,Abort:1",
+                           "-default", "Abort",
+                           "-image", "crossover",
+                           "-named-args", "A virus was found in one of these files:\n" .
+                           "%(filenames)s\n" .
+                           "\n" .
+                           "It is strongly recommended that you Abort the current operation to protect your computer.\n" .
+                           "\n" .
+                           "\%(output)s",
+                           "filenames", "    ". join("\n    ", @ARGV),
+                           "output", $output);
+    return $choice != 0;
+}
+
+sub scanner_dialog($)
+{
+    my ($output) = @_;
+    return 1 if (!$opt_gui);
+
+    my $choice = cxmessage("-title", "CrossOver Security Warning",
+                           "-buttons", "Continue:0,Abort:1",
+                           "-default", "Abort",
+                           "-image", "crossover",
+                           "-named-args", "Your antivirus does not seem to be working, or it could not scan one of the files below for some reason.\n" .
+                           "%(filenames)s\n" .
+                           "\n" .
+                           "Do you want to continue anyway?\n" .
+                           "\n" .
+                           "\%(output)s",
+                           "filenames", "    ". join("\n    ", @ARGV),
+                           "output", $output);
+    return $choice != 0;
+}
+
+# Import the CrossOver settings
+my $productid=CXUtils::get_product_id();
+require CXConfig;
+my $cxconfig=CXConfig->new("$ENV{CX_ROOT}/etc/$productid.conf",
+                           "$ENV{HOME}/.$productid/$productid.conf");
+my $scanner=$cxconfig->get("CrossOver", "AntiVirusCommand");
+my ($clean, $match);
+
+if (!$scanner)
+{
+    $scanner=cxwhich($ENV{PATH}, "clamdscan");
+    if (defined $scanner)
+    {
+        my $cmd=join(" ", shquote_string($scanner), "--fdpass", "--no-summary",
+                     (map { shquote_string($_) } @ARGV), "2>&1");
+        my $output=cxbackquote($cmd);
+        if ($? == 0)
+        {
+            # No virus found
+            kill(15, $pid) if (defined $pid);
+            exit 0;
+        }
+        elsif ($? == 256)
+        {
+            # Found a virus
+            print $output;
+            kill(15, $pid) if (defined $pid);
+            exit(virus_dialog($output) ? 1 : 0);
+        }
+        # Else clamdscan did not work
+    }
+    my @known_avs=(
+        ["clamscan --no-summary --", "0", "1"],          # Clam AntiVirus
+        ["avastcmd", "[02]", "[13]"],                    # Avast Antivirus
+        ["avgscan", "0", "[4567]"],                      # AVG Anti-Virus
+        ["uvscan --exit-on-error", "(?:0|13)", "[cd]"],  # McAfee LinuxShield
+        ["fpscan --adware", "0", ".?[1235679abdef]"],    # F-Prot Antivirus
+        ["antivir", "0", "[123]"],                       # AntiVir Workstation
+        ["sweep --", "(?:0|14)", "(?:3|18)"],            # Sophos Anti-virus
+        ["savscan --", "(?:0|14)", "(?:3|18)"]           # Sophos Anti-virus (alternate name)
+    );
+    foreach my $av (@known_avs)
+    {
+        my ($candidate, $c, $m)=@$av;
+        my @cmd=split / /, $candidate;
+        $scanner=cxwhich($ENV{PATH}, shift @cmd);
+        if ($scanner)
+        {
+            $scanner=join(" ", shquote_string($scanner), @cmd);
+            ($clean, $match)=($c, $m);
+            last;
+        }
+    }
+}
+else
+{
+    $scanner=CXUtils::argv2shcmd(map { expand_string($_) } CXUtils::cmdline2argv($scanner));
+    $clean=$cxconfig->get("CrossOver", "AntiVirusClean");
+    $clean="0" if (!defined $clean);
+    $match=$cxconfig->get("CrossOver", "AntiVirusMatch");
+    $match="1" if (!defined $match);
+}
+
+if (!$scanner)
+{
+    cxlog("Found no antivirus tool\n");
+    kill(15, $pid) if (defined $pid);
+    exit 3;
+}
+
+my $cmd=join(" ", $scanner, (map { shquote_string($_) } @ARGV));
+my $output=cxbackquote($cmd);
+kill(15, $pid) if (defined $pid);
+if (($? & 0xff) == 0)
+{
+    my $rc=sprintf("%x", $? >> 8);
+    if ($rc =~ /^$clean$/i)
+    {
+        # No virus found or they got all cleaned
+        exit 0;
+    }
+    if ($rc =~ /^$match$/i)
+    {
+        # Found a virus
+        print $output;
+        exit(virus_dialog($output) ? 1 : 0);
+    }
+}
+# The virus scanner malfunctionned
+print $output;
+printf("\%s: scanner exit code was 0x\%x\n", cxname0(), $?);
+exit(scanner_dialog($output) ? 2 : 0);

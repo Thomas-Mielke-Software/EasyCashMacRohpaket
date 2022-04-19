@@ -1,0 +1,385 @@
+#!/usr/bin/perl
+# (c) Copyright 2002-2012. CodeWeavers, Inc.
+use warnings;
+use strict;
+
+# The WinePrefixCreate script is responsible for taking a managed bottle
+# and replicating it to the specified location.
+#
+# It can be invoked in two ways:
+# * wineprefixcreate --snapshot
+#   Takes a 'snapshot' of the reference directory. Depending on the algorithm
+#   in use this could be a 'no-operation', or this could mean gathering some
+#   information to help the replication process.
+# * wineprefixcreate destination_directory
+#   Replicates the managed bottle's directory to the specified location. In
+#   this mode the exit code should be 0 if the update was successful or
+#   3 if no update was needed. All other exit codes indicate errors.
+
+BEGIN {
+    unshift @INC, "$ENV{CX_ROOT}/lib/perl";
+}
+use CXLog;
+use CXUtils;
+
+my $FILES="files";
+
+
+
+###
+# Main
+###
+my $refdir;
+my $wineprefix;
+
+my $opt_snapshot;
+my $opt_copy;
+my $opt_dry_run;
+my $opt_force;
+my $opt_verbose;
+my $opt_help;
+require CXOpts;
+my $cxopts=CXOpts->new(["stop_on_non_option"]);
+$cxopts->add_options(["snapshot"  => \$opt_snapshot,
+                      "copy"      => \$opt_copy,
+                      "dry-run"   => \$opt_dry_run,
+                      "force!"    => \$opt_force,
+                      "ref-dir=s" => \$refdir,
+                      "verbose!"  => \$opt_verbose,
+                      "?|h|help"  => \$opt_help
+                     ]);
+my $err=$cxopts->parse();
+$wineprefix=shift @ARGV if (@ARGV);
+
+my $fd_log=($opt_dry_run?1:($opt_verbose?2:undef));
+CXLog::fdopen($fd_log) if ($fd_log);
+
+
+# Validate the command line options
+my $usage;
+if ($err)
+{
+    cxerr("$err\n");
+    $usage=2;
+}
+elsif ($opt_help)
+{
+    $usage=0;
+}
+elsif (@ARGV)
+{
+    cxerr("unknown option '$ARGV[0]'\n");
+    $usage=2;
+}
+else
+{
+    if (!defined $refdir)
+    {
+        if (defined $wineprefix)
+        {
+            my $bottle=$wineprefix;
+            $bottle =~ s%^.*/%%;
+            $refdir=$ENV{CX_ROOT};
+            $refdir.="/" if ($refdir !~ m%/$%);
+            $refdir.="support/$bottle";
+        }
+        else
+        {
+            $refdir=$ENV{WINEPREFIX};
+        }
+    }
+    if (!-d $refdir)
+    {
+        cxerr("'$refdir' is not a directory\n");
+        exit 1;
+    }
+    if ($opt_snapshot and defined $wineprefix)
+    {
+        cxerr("cannot specify a destination directory in snapshot mode\n");
+        $usage=2;
+    }
+    if (!$opt_snapshot and !defined $wineprefix)
+    {
+        cxerr("you must specify the wineprefix directory\n");
+        $usage=2;
+    }
+}
+
+if (defined $usage)
+{
+    my $name0=cxname0();
+    if ($usage)
+    {
+        cxerr("try '$name0 --help' for more information\n");
+        exit $usage;
+    }
+    print "Usage: $name0 [--ref-dir DIR] [--verbose] --snapshot\n";
+    print "    or $name0 [--ref-dir DIR] [--verbose] [--force] [--dry-run]\n";
+    print "           [--copy] destination_directory\n";
+
+    print "\n";
+    print "Where options are:\n";
+    print "  --snapshot    Take a snapshot of the reference tree. For the administrator\n";
+    print "  --copy        Convert the environment to a standalone user copy\n";
+    print "  --force       Go through all the steps even if already up to date\n";
+    print "  --dry-run     Do not do anything, just print what would have been done\n";
+    print "  --ref-dir DIR Specifies the reference directory\n";
+    print "  --verbose     Turns on verbose messages\n";
+    print "  --help, -h    Shows this help message\n";
+    exit 0;
+}
+
+if ($opt_snapshot)
+{
+    require CXReplicateDir;
+    my $file_list=CXReplicateDir::scan_tree($refdir, "^dosdevices\$");
+    if (!defined $opt_dry_run)
+    {
+        # We don't really need the full list of files, only the timestamp
+        # will be used. But the file list is not big and it can be useful
+        # to the administrator.
+        my $now=time;
+        $file_list->{$FILES}=$now;
+        utime $now, $now, "$refdir/cxbottle.conf";
+        CXReplicateDir::write_file_list("$refdir/$FILES", $file_list);
+
+        # And make sure the timestamp matches what's in the file
+        utime $now, $now, "$refdir/$FILES";
+    }
+
+    # Check the policy
+    require CXConfig;
+    my $cxconfig=CXConfig->new("$refdir/cxbottle.conf");
+    my $cxreplicate=CXReplicateDir->new($refdir, $wineprefix);
+    $cxreplicate->set_policy_settings($cxconfig->get_section("ManagedUpdatePolicy"), 1);
+}
+else
+{
+    my ($action, $old_file_list);
+    if (!-d $wineprefix)
+    {
+        if (!cxmkpath($wineprefix))
+        {
+            cxerr("unable to create the '$wineprefix' WinePrefix directory: $@\n");
+            exit 1;
+        }
+        $old_file_list->{types}={};
+        $action="create";
+    }
+    else
+    {
+        my $fake_windows="$wineprefix/fake_windows";
+        my $drive_c="$wineprefix/drive_c";
+        if (-d $fake_windows and !-l $fake_windows and !-e $drive_c and
+            -d "$refdir/drive_c")
+        {
+            # Rename fake_windows to drive_c to match the reference directory
+            # before we do anything else
+            if (rename $fake_windows, $drive_c)
+            {
+                if (!symlink "drive_c", $fake_windows)
+                {
+                    cxwarn("unable to create '$fake_windows' link: $!\n");
+                }
+            }
+            else
+            {
+                cxwarn("unable to rename 'fake_windows' to 'drive_c': $!\n");
+            }
+        }
+
+        # Fix the profiles directory
+        my @profiles=CXUtils::cxglob($wineprefix, "drive_c/Windows/profiles/*", "i");
+        if (!grep m!/drive_c/Windows/profiles/crossover$!i, @profiles)
+        {
+            my $username=(getpwuid($>))[0];
+            if ($username)
+            {
+                @profiles=grep m!/drive_c/Windows/profiles/$username$!i, @profiles;
+                if (@profiles == 1 and -d $profiles[0])
+                {
+                    cxlog("Renaming '$profiles[0]' to 'crossover'\n");
+                    my $dir=cxdirname($profiles[0]) . "/crossover";
+                    if (!rename $profiles[0], $dir or !symlink "crossover", $profiles[0])
+                    {
+                        cxlog("unable to move and symlink '$profiles[0]' to '$dir'\n");
+                    }
+                }
+            }
+        }
+
+        if (!$opt_force and !$opt_copy)
+        {
+            my $old_mtime=(stat("$wineprefix/$FILES"))[9];
+            my $new_mtime=(stat("$refdir/$FILES"))[9];
+            if (defined $new_mtime and defined $old_mtime)
+            {
+                if ($old_mtime == $new_mtime)
+                {
+                    # There is nothing to do
+                    cxlog("Already up to date\n");
+                    exit 3;
+                }
+            }
+        }
+        if (-r "$wineprefix/$FILES")
+        {
+            require CXReplicateDir;
+            $old_file_list=CXReplicateDir::read_file_list("$wineprefix/$FILES");
+        }
+        else
+        {
+            cxwarn("unable to find the file list from the previous merge\n");
+            $old_file_list->{types}={};
+        }
+        $action="update";
+    }
+
+    if (!defined $opt_dry_run)
+    {
+        cxsystem("$ENV{CX_ROOT}/bin/wine", "--cx-hooks", "pre-$action-stub", $refdir);
+    }
+
+    # Retrieve and check the merge settings
+    require CXConfig;
+    my $cxconfig=CXConfig->new("$refdir/cxbottle.conf");
+    require CXReplicateDir;
+    my $cxreplicate=CXReplicateDir->new($refdir, $wineprefix);
+    $cxreplicate->{old}=$old_file_list;
+    $cxreplicate->set_link_type($cxconfig->get("Bottle", "ManagedLinkType"));
+    $cxreplicate->set_policy_settings($cxconfig->get_section("ManagedUpdatePolicy"), CXLog::is_on());
+    $cxreplicate->set_full_copy(1) if ($opt_copy);
+
+    # - Do not use "$refdir/$FILES" as a basis of what's new as it could be
+    #   outdated if Wine has been run since, and may cause problems when
+    #   comparing to the date on our links.
+    # - Skip dosdevices because we are not merging it using the usual
+    #   algorithm.
+    $cxreplicate->{new}=CXReplicateDir::scan_tree($refdir, "^dosdevices\$");
+
+    $cxreplicate->merge_tree("^(?:$FILES|dosdevices(?:/[a-z]:)?)\$");
+    $cxreplicate->dump_task_list();
+
+    if (!defined $opt_dry_run)
+    {
+        $cxreplicate->apply_changes();
+
+        # Update the special folder symbolic links
+        # Note: this is the first time we run a wine process in the new prefix.
+        # We skipped making a dosdevices directory above, so wine
+        # will automatically create a minimal one for us.
+        # If we are going to merge other drives (e.g., from a published bottle),
+        # we will do so later.
+        cxsystem("$ENV{CX_ROOT}/bin/wine", "--wl-app", "rundll32.exe", "shell32.dll,wine_update_symbolic_links");
+
+        my $devdir="$wineprefix/dosdevices";
+        # Recreate the drive symlinks
+        if (opendir(my $dh, $devdir))
+        {
+            foreach my $dentry (readdir $dh)
+            {
+                next if ($dentry =~ /^\.\.?$/);
+                my $drive="$devdir/$dentry";
+
+                my $delete;
+                if (-l $drive)
+                {
+                    if (!-e $drive)
+                    {
+                        $delete=1;
+                    }
+                    else
+                    {
+                        if ($opt_copy and readlink($drive) eq "$refdir/dosdevices/$dentry")
+                        {
+                            # Delete the link so we can recreate it later
+                            $delete=1;
+                        }
+                    }
+                }
+                if ($delete and !unlink $drive)
+                {
+                    cxwarn("unable to delete '$drive': $!\n");
+                }
+            }
+            closedir($dh);
+
+            # Recreate the c: and y: drives
+            if (!-e "$devdir/c:" and !symlink("../drive_c", "$devdir/c:"))
+            {
+                cxwarn("unable to create '$devdir/c:': $!\n");
+            }
+            if (!-e "$devdir/z:" and !symlink("/", "$devdir/z:"))
+            {
+                cxwarn("unable to create '$devdir/z:': $!\n");
+            }
+            if (defined $ENV{HOME})
+            {
+                # Also check that the link points to the current $HOME
+                my $dst=readlink("$devdir/y:");
+                if (!defined $dst or $dst ne $ENV{HOME})
+                {
+                    unlink "$devdir/y:";
+                    if (!symlink($ENV{HOME}, "$devdir/y:"))
+                    {
+                        cxwarn("unable to create '$devdir/y:': $!\n");
+                    }
+                }
+            }
+        }
+        if (opendir(my $dh, "$refdir/dosdevices"))
+        {
+            foreach my $dentry (readdir $dh)
+            {
+                next if ($dentry =~ /^(\.\.?|[cy]:)$/);
+                next if (-e "$devdir/$dentry");
+
+                my $drive="$refdir/dosdevices/$dentry";
+                my $target=($opt_copy ? readlink($drive) : $drive);
+                if (defined $target and !symlink($target, "$devdir/$dentry"))
+                {
+                    cxwarn("unable to link '$devdir/$dentry': $!\n");
+                }
+            }
+            closedir($dh);
+        }
+
+        if (!$opt_copy)
+        {
+            # Now write down the list of what we really copied
+            unlink "$wineprefix/$FILES";
+            CXReplicateDir::write_file_list("$wineprefix/$FILES", $cxreplicate->{new});
+
+            # And make sure the timestamp matches that of the global files to
+            # avoid unnecessary updates
+            if (defined $cxreplicate->{new}->{timestamps}->{$FILES})
+            {
+                utime time, $cxreplicate->{new}->{timestamps}->{$FILES}, "$wineprefix/$FILES";
+            }
+        }
+        else
+        {
+            unlink "$wineprefix/$FILES";
+            require CXUpgrade;
+            my $filename="$wineprefix/cxbottle.conf";
+            my $cxbottle=CXUpgrade->new($filename);
+            my $s=$cxbottle->get("Bottle");
+            if (defined $s)
+            {
+                # Comment it out
+                my $field=$s->get_field("Updater");
+                my $entry=$field->get_effective_entry();
+                my $line=$cxbottle->{lines}->[@$entry[1]];
+                @$line[0]=";" . @$line[0];
+                @$entry[0]=1;
+                $cxbottle->write($filename);
+            }
+            else
+            {
+                cxwarn("unable to find Updater in '$filename'\n");
+            }
+        }
+
+        cxsystem("$ENV{CX_ROOT}/bin/wine", "--cx-hooks", "$action-stub", $refdir);
+    }
+}

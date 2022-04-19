@@ -1,0 +1,408 @@
+#!/usr/bin/perl
+# (c) Copyright 2001-2014. CodeWeavers, Inc.
+use warnings;
+use strict;
+
+
+# Portable which(1) implementation
+sub cxwhich($$;$)
+{
+    my ($dirs, $app, $noexec)=@_;
+    if ($app =~ /^\//)
+    {
+        return $app if ((-x $app or $noexec) and -f $app);
+    }
+    elsif ($app =~ /\//)
+    {
+        require Cwd;
+        my $path=Cwd::cwd() . "/$app";
+        return $path if ((-x $path or $noexec) and -f $path);
+    }
+    else
+    {
+        foreach my $dir (split /:/, $dirs)
+        {
+            return "$dir/$app" if ($dir ne "" and (-x "$dir/$app" or $noexec) and -f "$dir/$app");
+        }
+    }
+    return undef;
+}
+
+# Fast dirname() implementation
+sub _cxdirname($)
+{
+    my ($path)=@_;
+    return undef if (!defined $path);
+    return "." if ($path !~ s!/+[^/]+/*$!!s);
+    return "/" if ($path eq "");
+    return $path;
+}
+
+# Locate where CrossOver is installed by looking for the directory
+# where the cxmenu script is located, unwinding symlinks on the way
+sub locate_cx_root(;$)
+{
+    my ($fallback)=@_;
+    my $argv0=cxwhich($ENV{PATH},$0);
+    $argv0=$0 if (!defined $argv0);
+    if ($argv0 !~ m+^/+)
+    {
+        require Cwd;
+        $argv0=Cwd::cwd() . "/$argv0";
+    }
+    my $dir=_cxdirname($argv0);
+    my $bindir=$dir;
+    $bindir =~ s%/lib$%/bin%;
+    while (!-x "$bindir/cxmenu" or !-f "$bindir/cxmenu")
+    {
+        last if (!-l $argv0);
+        $argv0=readlink($argv0);
+        $argv0="$dir/$argv0" if ($argv0 !~ m+^/+);
+        $dir=_cxdirname($argv0);
+        $bindir=$dir;
+        $bindir =~ s%/lib$%/bin%;
+    }
+    $bindir =~ s%/(?:\./)+%/%g;
+    $bindir =~ s%/\.$%%;
+    $ENV{CX_ROOT}=_cxdirname($bindir);
+    if ((!-x "$ENV{CX_ROOT}/bin/cxmenu" or !-f "$ENV{CX_ROOT}/bin/cxmenu") and
+        $fallback)
+    {
+        $ENV{CX_ROOT}=$fallback;
+    }
+    if (!-x "$ENV{CX_ROOT}/bin/cxmenu" or !-f "$ENV{CX_ROOT}/bin/cxmenu")
+    {
+        my $name0=$0;
+        $name0 =~ s+^.*/++;
+        print STDERR "$name0:error: could not find CrossOver in '$ENV{CX_ROOT}'\n";
+        exit 1;
+    }
+    return $ENV{CX_ROOT};
+}
+
+BEGIN {
+    unshift @INC, locate_cx_root() . "/lib/perl";
+}
+use CXLog;
+use CXUtils;
+
+
+# Process command-line options
+my $opt_console;
+my $opt_description;
+my $opt_wait;
+my $opt_ignore_home;
+my $opt_parent;
+my $opt_verbose;
+my $opt_help;
+require CXOpts;
+my $cxopts=CXOpts->new(["stop_on_non_option"]);
+$cxopts->add_options(["console"    => \$opt_console,
+                      "description=s"  => \$opt_description,
+                      "wait"       => \$opt_wait,
+                      "ignore-home"=> \$opt_ignore_home,
+                      "parent=s"   => \$opt_parent,
+                      "verbose!"   => \$opt_verbose,
+                      "?|h|help"   => \$opt_help
+                     ]);
+my $err=$cxopts->parse();
+CXLog::fdopen(2) if ($opt_verbose);
+
+# Validate the command line options
+my $usage;
+if ($err)
+{
+    cxerr("$err\n");
+    $usage=2;
+}
+elsif ($opt_help)
+{
+    $usage=0;
+}
+elsif (!@ARGV)
+{
+    cxerr("no command specified\n");
+    $usage=2;
+}
+
+# Always let the parent know we started, even in case of erroneous usage
+my $parent_fifo;
+if ($opt_parent and !open($parent_fifo, ">", $opt_parent))
+{
+    cxerr("unable to open '$opt_parent' for writing: $!\n");
+    # Don't overwrite $usage if it is already set
+    $usage||=1;
+}
+
+# Print usage
+if (defined $usage)
+{
+    my $name0=cxname0();
+    if ($usage)
+    {
+        cxerr("try '$name0 --help' for more information\n");
+        exit $usage;
+    }
+    print "Usage: $name0 [--console] [--description MSG] [--wait] [--verbose] [--help]\n";
+    print "            COMMAND\n";
+
+    print "\n";
+    print "Runs the specified command as root.\n";
+
+    print "\n";
+    print "Options:\n";
+    print "  COMMAND     The command to run as root as separate arguments. Explicitly use\n";
+    print "              'sh -c' if the command should be run by the shell.\n";
+    print "  --console   Indicates that the command to be run needs a console, typically\n";
+    print "              because it will prompt the user on the console. It is recommended\n";
+    print "              not to pass this option to start a graphical application.\n";
+    print "  --description MSG Provides a description of the operation to be performed as\n";
+    print "              root and its rationale. Note that this currently only has an\n";
+    print "              effect in --console mode.\n";
+    print "  --wait      Wait after the command has completed.\n";
+    print "  --ignore-home Don't try to preserve \$HOME and other environment variables.\n";
+    print "  --verbose   Output more information about what is going on.\n";
+    print "  --help, -h  Shows this help message.\n";
+    exit 0;
+}
+
+if ($> == 0)
+{
+    # We are already root, so just run the command
+    cxexec(@ARGV);
+    cxerr("unable to run ", CXUtils::argv2shcmd(@ARGV), ": $!\n");
+    exit 1;
+}
+
+# Note that we cannot trust the graphical 'su' tools, gksu and kdesudo in
+# particular, to provide or leave the console in a usable state, which makes
+# them incompatible with the --console option.
+my @args;
+if (!$opt_console and $ENV{DISPLAY})
+{
+    # Try to pick the appropriate default for the current desktop environment
+    my $de=CXUtils::get_desktop_environment();
+    cxlog("desktop environment: $de\n");
+    my @su_list;
+    push @su_list, "gksu --", "gnomesu -c" if ($de eq "gnome");
+    push @su_list, "gksu --" if ($de eq "deepin");
+    push @su_list, "kdesudo --", "kdesu --" if ($de eq "kde");
+    # And push all known tools as fallbacks. Push xdg-su last because its
+    # behavior for 'sh -c' commands is inconsistent between GNOME and KDE.
+    push @su_list, "gksu --", "gnomesu -c", "kdesudo --", "kdesu --", "xdg-su -c";
+
+    foreach my $sutool_cmd (@su_list)
+    {
+        my @sutool=CXUtils::cmdline2argv($sutool_cmd);
+        my $sutoolname=shift @sutool;
+        cxlog("trying '$sutoolname'\n");
+        my $path=cxwhich("$ENV{PATH}:/usr/lib64/kde4/libexec:/usr/lib/kde4/libexec", $sutoolname);
+        if (defined $path)
+        {
+            my $shcmd=CXUtils::argv2shcmd(@ARGV);
+
+            if ($sutoolname eq "gksu")
+            {
+                # 'gksu --' expects the command as separate arguments, does
+                # not run it through sh and passes through stdout and the exit
+                # code normally.
+                # 'gksu --' is supported since GNOME 2.16, circa ~2006.
+                # 'gksu --' gets confused if the first argument contains a
+                # space so run the command through 'env' in that case.
+                unshift @ARGV, "env" if ($ARGV[0] =~ / /);
+                @args=($path, @sutool, @ARGV);
+            }
+            elsif ($sutoolname eq "gnomesu")
+            {
+                # 'gnomesu -c' expects the command as a single argument, does
+                # not run it through sh and passes through stdout and the exit
+                # code normally.
+                @args=($path, @sutool, $shcmd);
+            }
+            elsif ($sutoolname eq "xdg-su")
+            {
+                # 'xdg-su -c' expects the command as a single argument and,
+                # depending on the backend, may or may not run it through sh so
+                # we run the commands through 'env'. xdg-su also may or may not
+                # pass through stdout. Finally it always preserves zero exit
+                # codes, but non-zero ones are usually mapped to another
+                # non-zero value.
+                @args=($path, @sutool, "env $shcmd");
+            }
+            else
+            {
+                # 'kdesu --' expects the command in as separate arguments,
+                # won't run a command with a relative path
+                # runs it through sh in old version and not in new versions
+                # (the same is true for the '-c' variant too except that the
+                # latter gets confused if there's an extra 'sh -c'), eats
+                # stdout but returns the exit code normally.
+                # The old versions of kdesu that ru the command in sh get
+                # confused if the first argument contains a space so run the
+                # command through env in that case.
+                # kdesudo works the same way as kdesu.
+                unshift @ARGV, "env" if ($ARGV[0] =~ / /);
+                @args=($path, @sutool, @ARGV);
+            }
+            last;
+        }
+    }
+}
+
+if (!@args)
+{
+    # Make sure we get a usable console as we are falling back to a console
+    # 'su' tool.
+    require POSIX;
+    if (!POSIX::isatty(0))
+    {
+        @args=CXUtils::get_terminal_emulator(cxgettext("Type the root password"));
+        if (!@args)
+        {
+            cxerr("unable to find a suitable terminal emulator\n");
+            exit 1;
+        }
+        # Use 'sh -c' as recommended by get_terminal_emulator().
+        # Also the terminal emulator, gnome-terminal for instance, may
+        # return before the command terminates so use a fifo to
+        # synchronize.
+        my $name0=cxname0();
+        my $path = $ENV{TMPDIR} || "/tmp";
+        $path .= "/$name0-fifo.$$";
+        if (cxsystem("mkfifo", "-m", "0600", $path))
+        {
+            cxerr("unable to create the '$path' fifo\n");
+            exit 1;
+        }
+        my @child_cxsu=($0, "--parent", $path, "--wait");
+        push @child_cxsu, "--console" if ($opt_console);
+        push @child_cxsu, "--description", $opt_description if ($opt_description);
+        push @child_cxsu, @ARGV;
+        push @args, "/bin/sh", "-c", CXUtils::argv2shcmd(@child_cxsu);
+        my $pid=fork();
+        if (!defined $pid)
+        {
+            cxerr("unable to fork: $!\n");
+            unlink $path;
+            exit 1;
+        }
+        if ($pid == 0)
+        {
+            cxexec(@args);
+            cxerr("unable to run '@args': $!\n");
+            exit 1;
+        }
+        my $rc=1;
+        eval
+        {
+            local $SIG{ALRM} = sub { die "timeout" };
+            alarm(3);
+            if (open(my $fifo, "<", $path))
+            {
+                alarm(0);
+                $rc=<$fifo>;
+                $rc=1 if (!defined $rc);
+                close($fifo);
+            }
+            else
+            {
+                alarm(0);
+                cxerr("unable to open '$path' for reading: $!\n");
+            }
+        };
+        if ($@ eq "timeout")
+        {
+            cxerr("timed out waiting for the child $name0 process to start\n");
+            $rc=1;
+        }
+        elsif ($@)
+        {
+            cxerr("$@\n");
+            $rc=1;
+        }
+        unlink $path;
+        # Sanitize $rc so it is suitable for exit
+        exit($rc >> 8) if ($rc >> 8);
+        exit($rc);
+    }
+}
+
+if (!@args)
+{
+    my $command=CXUtils::argv2shcmd(@ARGV);
+    print "$opt_description\n" if ($opt_description);
+    print cxgettext("This operation must be run as root:\n");
+    print "\n   $command\n\n";
+
+    my $pkexec_path=cxwhich("$ENV{PATH}","pkexec");
+    if (defined $pkexec_path)
+    {
+        # pkexec does not preserve the X environment variables
+        print "Trying with pkexec...\n";
+        @args=("pkexec", "env");
+        push @args, "DISPLAY=$ENV{DISPLAY}" if (exists $ENV{DISPLAY});
+        push @args, "XAUTHORITY=$ENV{XAUTHORITY}" if (exists $ENV{XAUTHORITY});
+        push @args, @ARGV;
+    }
+    # Use sudo if available and allowed
+    if (!@args)
+    {
+        my $sudo_path=cxwhich("$ENV{PATH}","sudo");
+        if (defined $sudo_path)
+        {
+            my $cmd=shquote_string($sudo_path) . " -l |";
+            print "Trying with sudo...\n";
+            cxlog("Running: $cmd\n");
+            if (open(my $fh, $cmd))
+            {
+                if (grep /^\s*\((?:root|ALL)(?:\s*:[^)]*)?\)\s+(?:NOPASSWD:\s+)?ALL\s*$/, <$fh>)
+                {
+                    @args=($sudo_path);
+                    push @args, "-H" if ($opt_ignore_home);
+                    push @args, @ARGV;
+                }
+                close($fh);
+            }
+        }
+    }
+    if (!@args)
+    {
+        # Try sux first as it will preserve access to X
+        my $sux_path=cxwhich("$ENV{PATH}","sux");
+        if (defined $sux_path)
+        {
+            print "Trying with sux (please type the password)...\n";
+            @args=("sux");
+            push @args, "-" if ($opt_ignore_home);
+            push @args, "root", @ARGV;
+        }
+    }
+    if (!@args)
+    {
+        # Otherwise, use the regular su
+        # Note that unlike sudo and sux, su expects
+        # the whole command in just one argument
+        print "Trying with su (please type the password)...\n";
+        @args=("su");
+        push @args, "-" if ($opt_ignore_home);
+        push @args, "root", "-c", $command;
+    }
+}
+
+my $rc = cxsystem(@args);
+if ($opt_wait)
+{
+    print cxgettext("Finished. Press Return to continue.");
+    <STDIN>;
+}
+if ($parent_fifo)
+{
+    # When going through a terminal emulator this is the only way
+    # for the parent to know what the command actually returned.
+    print $parent_fifo $rc;
+    close($parent_fifo);
+}
+
+# Sanitize $rc so it is suitable for exit
+exit($rc >> 8) if ($rc >> 8);
+exit($rc);

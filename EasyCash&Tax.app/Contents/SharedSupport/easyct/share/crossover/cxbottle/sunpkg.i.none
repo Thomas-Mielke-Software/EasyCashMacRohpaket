@@ -1,0 +1,45 @@
+#!/bin/sh
+# (c) Copyright 2009. CodeWeavers, Inc.
+
+# Setup logging
+# To trigger logging, use a command of the form:
+# pkgadd/rm -v ... 2>&1 | tee pkg.log
+if echo $- | grep x >/dev/null
+then
+    echo >&2
+    echo "***** `date`" >&2
+    echo "Starting: $0 $@" >&2
+    env >&2
+    CX_LOG="-"
+    export CX_LOG
+fi
+
+CX_ROOT="$BASEDIR/$CX_PKGINST"
+export CX_ROOT
+
+pkgsrc="$INST_DATADIR/$PKG"
+if [ -f "$pkgsrc/archive/none.gz" ]
+then
+    ext="gz"
+    uncompress="gunzip -c"
+elif [ -f "$pkgsrc/archive/none.bz2" ]
+then
+    ext="bz2"
+    uncompress="bunzip2 -c"
+elif [ -f "$pkgsrc/archive/none.7z" ]
+then
+    ext="7z"
+    uncompress="7za x -so"
+else
+    echo "found no archive file for the none class action script" >&2
+    exit 1
+fi
+
+# Capture the 7za and cpio output
+out=`(($uncompress "$pkgsrc/archive/none.$ext" || echo "$uncompress failed: $?" >&2) | (cd "$CX_ROOT" && cpio -i -d -m -u)) 2>&1`
+rc=$?
+if [ $rc -ne 0 ] || echo "$out" | grep "failed:" >/dev/null
+then
+    echo "$out" >&2
+    echo "'$uncompress \"$pkgsrc/archive/none.$ext\" | cpio -i -d -m -u' failed (rc=$rc)" >&2
+fi

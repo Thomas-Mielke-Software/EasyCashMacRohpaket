@@ -1,0 +1,155 @@
+#!/usr/bin/perl
+# (c) Copyright 2003-2008, 2012. CodeWeavers, Inc.
+use warnings;
+use strict;
+
+my $name0=$0;
+$name0 =~ s+^.*/++;
+
+
+BEGIN {
+    unshift @INC, "$ENV{CX_ROOT}/lib/perl";
+}
+use CXLog;
+use CXUtils;
+use CXMenu;
+
+
+# Parse the command line arguments
+my $opt_utf8;
+my $opt_desktop;
+my $opt_menu;
+my $opt_root;
+my $opt_link;
+my $opt_descr;
+my $opt_icon;
+my $opt_path;
+my $opt_args;
+my $opt_workdir;
+my $opt_arch;
+my $opt_help;
+my $opt_verbose;
+require CXOpts;
+my $cxopts=CXOpts->new();
+$cxopts->add_options(["desktop"   => \$opt_desktop,
+                      "menu"      => \$opt_menu,
+                      "utf8"      => \$opt_utf8,
+                      "root=s"    => \$opt_root,
+                      "link=s"    => \$opt_link,
+                      "descr=s"   => \$opt_descr,
+                      "icon=s"    => \$opt_icon,
+                      "path=s"    => \$opt_path,
+                      "args=s"    => \$opt_args,
+                      "workdir=s" => \$opt_workdir,
+                      "arch=s"    => \$opt_arch,
+                      "verbose!"  => \$opt_verbose,
+                      "?|h|help"  => \$opt_help
+                     ]);
+my $err=$cxopts->parse();
+CXLog::fdopen(2) if ($opt_verbose);
+
+
+# Verify command line options
+my $usage;
+if ($err)
+{
+    cxerr("$err\n");
+    $usage=2;
+}
+elsif ($opt_help)
+{
+    $usage=0;
+}
+else
+{
+    if (!$opt_menu and !$opt_desktop)
+    {
+        cxerr("you must specify one of --menu or --desktop\n");
+        $usage=2;
+    }
+    if (!defined $opt_link)
+    {
+        cxerr("you must specify a link name with --link\n");
+        $usage=2;
+    }
+}
+
+
+# Print usage
+if (defined $usage)
+{
+    if ($usage)
+    {
+        error("try '$name0 --help' for more information\n");
+        exit $usage;
+    }
+    print "Usage: $name0 [--desktop|--menu] --link LNKFILE [--descr DESCR]\n";
+    print "                     [--icon ICONFILE] [--path APPEXE] [--utf8] [--help]\n";
+    print "                     [options]\n";
+
+    print "\n";
+    print "Performs the interface between winemenubuilder.exe and cxmenu.\n";
+
+    print "\n";
+    print "Options:\n";
+    print "  --desktop       Specifies that this is a desktop icon\n";
+    print "  --menu          Specifies that this is a regular menu\n";
+    print "  --link LNKFILE  Windows path to the '.lnk' file\n";
+    print "  --descr DESCR   The menu description\n";
+    print "  --icon ICONFILE Unix path to the XPM icon file\n";
+    print "  --path APPEXE   Windows path to the application executable\n";
+    print "  --args XXX      The arguments to the application\n";
+    print "  --arch ARCH     The architecture of the application (i386 or x86_64)\n";
+    print "  --utf8          Specifies that the script parameters are in UTF-8,\n";
+    print "                  regardless of the default system encoding\n";
+    print "  --verbose       Output more information about what is going on\n";
+    print "  --help, -h      Shows this help message\n";
+    print "\n";
+    print "  --workdir XX    For backward compatibility, ignored\n";
+    exit 0;
+}
+
+
+require CXBottle;
+if (!defined $ENV{WINEPREFIX} or !defined $ENV{CX_BOTTLE} or
+    !CXBottle::is_initialized())
+{
+    cxerr("the Wine environment is not set\n");
+    exit 1;
+}
+
+# Normalize the link name
+if (!$opt_utf8)
+{
+    require CXRecode;
+    $opt_root=CXRecode::from_sys("UTF-8", $opt_root);
+    $opt_link=CXRecode::from_sys("UTF-8", $opt_link);
+    $opt_descr=CXRecode::from_sys("UTF-8", $opt_descr);
+    $opt_path=CXRecode::from_sys("UTF-8", $opt_path);
+    $opt_args=CXRecode::from_sys("UTF-8", $opt_args);
+    $opt_arch=CXRecode::from_sys("UTF-8", $opt_arch);
+}
+
+# Process the arguments and extract the information needed for cxmenu
+my $cxmenu=CXMenu::wineshelllink2cxmenu($opt_menu, $opt_root, $opt_link, $opt_path, $opt_args, $opt_icon);
+if (!$cxmenu)
+{
+    cxerr($@);
+    exit 1;
+}
+elsif ($@)
+{
+    cxwarn($@);
+}
+
+# Prepare the call to cxmenu
+my @cmd=("$ENV{CX_ROOT}/bin/cxmenu", "--utf8", "--create", $cxmenu->{fullpath}, "--type", "windows");
+push @cmd, "--install" if (!defined $ENV{CX_MENU_INSTALL});
+push @cmd, "--description", $opt_descr if (defined $opt_descr);
+push @cmd, "--icon", $cxmenu->{icon} if ($cxmenu->{icon});
+push @cmd, "--shortcut", $cxmenu->{shortcut} if ($cxmenu->{shortcut});
+push @cmd, "--arch", $opt_arch if (defined $opt_arch);
+
+cxexec(@cmd);
+cxerr("unable to run '@cmd': $!\n");
+exit 1;

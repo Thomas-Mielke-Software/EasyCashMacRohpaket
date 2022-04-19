@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- (c) Copyright 2010. CodeWeavers, Inc.-->
+<c4p>
+  <applications>
+<!-- Profile for unknown applications -->
+<app appid="com.codeweavers.unknown">
+      <cxversion product="cxgames">9.0</cxversion>
+      <cxversion product="cxoffice">9.0</cxversion>
+      <name>Unlisted application</name>
+<name lang="en">Unlisted application</name>
+<name lang="zh-tw">未列出的應用程式</name>
+<name lang="zh-cn">未列出的应用程序</name>
+<name lang="sv">Olistat program</name>
+<name lang="sk">Neregistrovaný aplikácia</name>
+<name lang="ru">Неподдерживаемое приложение</name>
+<name lang="ro">Aplicație nelistată</name>
+<name lang="pt">Aplicação não listada</name>
+<name lang="nl">Niet in de lijst voorkomend programma</name>
+<name lang="lt">Nepalaikomos programos</name>
+<name lang="it">Applicazione non elencata</name>
+<name lang="he">יישום לא רשום</name>
+<name lang="da">Ikke-listet program</name>
+<name lang="cs">Neuvedená aplikace</name>
+      <appprofile>
+        <description>Use this profile to install applications not known to CrossOver.</description>
+<description lang="en">Use this profile to install applications not known to CrossOver.</description>
+<description lang="zh-tw">使用這份設定檔案以安裝非 CrossOver 官方支持的應用程式。</description>
+<description lang="zh-cn">使用这份配置文件以安装非 CrossOver 官方支持的应用程序。</description>
+<description lang="sv">Använd denna profil för att installera program som är okända för CrossOver.</description>
+<description lang="sk">Tento profil použite na inštaláciu aplikácií, ktoré nepozná CrossOver.</description>
+<description lang="ru">Используйте этот профиль для установки приложений, о которых CrossOver не знает.</description>
+<description lang="ro">Utilizați acest profil pentru a instala aplicații necunoscute pentru CrossOver.</description>
+<description lang="pt-br">Use este perfil para instalar aplicações não conhecidas pelo CrossOver.</description>
+<description lang="pt">Use este perfil para instalar aplicações desconhecidas do CrossOver.</description>
+<description lang="pl">Użyj tego profilu, aby zainstalować aplikacje nie znane przez CrossOver.</description>
+<description lang="nl">Gebruik dit profiel om programma's te installeren die CrossOver niet kent.</description>
+<description lang="lt">Naudokite šį profilį CrossOver nežinomoms programoms diegti.</description>
+<description lang="ja">CrossOver にリストされてないアプリケーションをインストールするには、こちらを選択してください。</description>
+<description lang="it">Usa questo profilo per installare applicazioni non presenti in CrossOver.</description>
+<description lang="he">פרופיל זה מאפשר לך להתקין יישומים שאינם ידועים ל- CrossOver.</description>
+<description lang="fr">Utiliser ce profil pour installer les applications inconnues à CrossOver.</description>
+<description lang="es">Utilice este perfil para instalar aplicaciones desconocidas para CrossOver.</description>
+<description lang="de">Benutzen Sie dieses Profil um Anwendungen zu installieren die CrossOver nicht kennt.</description>
+<description lang="da">Brug denne profil for at installere programmer CrossOver ikke kender.</description>
+<description lang="cs">Tento profil použijte k instalaci aplikací, které Crossover není známo.</description>
+        <medal platform="Linux">untested</medal>
+        <medal platform="Mac">untested</medal>
+        <category>Unknown</category>
+        <flag>application</flag>
+        <bottletemplate>win7</bottletemplate>
+        <bottletemplate>winxp</bottletemplate>
+        <bottletemplate>win2000</bottletemplate>
+        <bottletemplate>winvista</bottletemplate>
+        <bottletemplate>win98</bottletemplate>
+        <bottletemplate>win8</bottletemplate>
+        <bottletemplate>win10</bottletemplate>
+        <bottletemplate>winvista_64</bottletemplate>
+        <bottletemplate>win7_64</bottletemplate>
+        <bottletemplate>win8_64</bottletemplate>
+        <bottletemplate>win10_64</bottletemplate>
+        <bottletemplate>winxp_64</bottletemplate>
+      </appprofile>
+      <installprofile>
+<!-- List the issues that are not critical but likely
+-->
+<!---->
+<!---->
+<!---->
+<!---->
+<!---->
+<!---->
+<!---->
+<!---->
+<!---->
+<!---->
+<!---->
+<!---->
+<!---->
+<!---->
+<!---->
+<!---->
+<!---->
+<!---->
+<!---->
+<!--             to be important for many unknown applications.
+-->
+<!---->
+<!---->
+<!---->
+<!---->
+<!---->
+<!---->
+<!---->
+<!---->
+<!---->
+<!---->
+<!---->
+<!---->
+<!---->
+<!---->
+<!---->
+<!---->
+<!---->
+<!---->
+<!---->
+<!--        -->
+<cxdiagcheck>AppRecommend:MissingLibCups</cxdiagcheck>
+        <cxdiagcheck>AppRecommend:MissingLibFontconfig</cxdiagcheck>
+        <cxdiagcheck>AppRecommend:MissingLibGL</cxdiagcheck>
+        <cxdiagcheck>AppRecommend:MissingLibTiff5</cxdiagcheck>
+        <cxdiagcheck>AppRecommend:MissingLibXml2</cxdiagcheck>
+        <cxdiagcheck>AppRecommend:MissingLibXslt</cxdiagcheck>
+        <postinstallreboot>true</postinstallreboot>
+      </installprofile>
+    </app>
+
+  </applications>
+</c4p>

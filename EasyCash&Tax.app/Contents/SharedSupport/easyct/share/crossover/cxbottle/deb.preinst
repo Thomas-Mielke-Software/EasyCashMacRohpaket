@@ -1,0 +1,54 @@
+#!/bin/sh
+# (c) Copyright 2008. CodeWeavers, Inc.
+
+# Setup logging
+if [ -n "$CX_LOG" ]
+then
+    [ "$CX_LOG" = "-" ] || exec 2>>"$CX_LOG"
+    echo >&2
+    echo "***** `date`" >&2
+    echo "Starting: $0 $@" >&2
+    set -x
+fi
+
+action="$1"
+oldver="$2"
+
+CX_ROOT="/opt/@product_id@"
+CX_BOTTLE="@bottle@"
+export CX_ROOT CX_BOTTLE
+
+case "$action" in
+install|upgrade)
+    if [ ! -f "$CX_ROOT/bin/cxbottle" ]
+    then
+        echo "error: could not find CrossOver in '$CX_ROOT'" >&2
+        exit 1
+    fi
+    if [ ! -x "$CX_ROOT/bin/cxbottle" ]
+    then
+        echo "error: the '$CX_ROOT/bin/cxbottle' tool is not executable!" >&2
+        exit 1
+    fi
+    if [ ! -x "$CX_ROOT/bin/wineprefixcreate" -o ! -f "$CX_ROOT/bin/wineprefixcreate" ]
+    then
+        echo "error: managed bottles are not supported in this version of CrossOver" >&2
+        exit 1
+    fi
+
+    if [ -d "$CX_ROOT/support/$CX_BOTTLE" ]
+    then
+        # Save the bottle's uuid
+        "$CX_ROOT/bin/cxbottle" --get-uuid >"$CX_ROOT/support/$CX_BOTTLE/.uuid" 2>/dev/null
+    fi
+    ;;
+
+abort-upgrade)
+    rm -f "$CX_ROOT/support/$CX_BOTTLE/.uuid"
+    ;;
+esac
+
+# Make sure the script returns 0
+true
+
+#DEBHELPER#

@@ -1,0 +1,333 @@
+#!/usr/bin/perl
+# (c) Copyright 2004-2008, 2010. CodeWeavers, Inc.
+use warnings;
+use strict;
+
+my $name0=$0;
+$name0 =~ s+^.*/++;
+
+my $max_head=50000;
+my $max_tail;
+my $max_extra;
+
+
+# Portable which(1) implementation
+sub cxwhich($$;$)
+{
+    my ($dirs, $app, $noexec)=@_;
+    if ($app =~ /^\//)
+    {
+        return $app if ((-x $app or $noexec) and -f $app);
+    }
+    elsif ($app =~ /\//)
+    {
+        require Cwd;
+        my $path=Cwd::cwd() . "/$app";
+        return $path if ((-x $path or $noexec) and -f $path);
+    }
+    else
+    {
+        foreach my $dir (split /:/, $dirs)
+        {
+            return "$dir/$app" if ($dir ne "" and (-x "$dir/$app" or $noexec) and -f "$dir/$app");
+        }
+    }
+    return undef;
+}
+
+# Fast dirname() implementation
+sub _cxdirname($)
+{
+    my ($path)=@_;
+    return undef if (!defined $path);
+    return "." if ($path !~ s!/+[^/]+/*$!!s);
+    return "/" if ($path eq "");
+    return $path;
+}
+
+# Locate where CrossOver is installed by looking for the directory
+# where the cxmenu script is located, unwinding symlinks on the way
+sub locate_cx_root(;$)
+{
+    my ($fallback)=@_;
+    my $argv0=cxwhich($ENV{PATH},$0);
+    $argv0=$0 if (!defined $argv0);
+    if ($argv0 !~ m+^/+)
+    {
+        require Cwd;
+        $argv0=Cwd::cwd() . "/$argv0";
+    }
+    my $dir=_cxdirname($argv0);
+    my $bindir=$dir;
+    $bindir =~ s%/lib$%/bin%;
+    while (!-x "$bindir/cxmenu" or !-f "$bindir/cxmenu")
+    {
+        last if (!-l $argv0);
+        $argv0=readlink($argv0);
+        $argv0="$dir/$argv0" if ($argv0 !~ m+^/+);
+        $dir=_cxdirname($argv0);
+        $bindir=$dir;
+        $bindir =~ s%/lib$%/bin%;
+    }
+    $bindir =~ s%/(?:\./)+%/%g;
+    $bindir =~ s%/\.$%%;
+    $ENV{CX_ROOT}=_cxdirname($bindir);
+    if ((!-x "$ENV{CX_ROOT}/bin/cxmenu" or !-f "$ENV{CX_ROOT}/bin/cxmenu") and
+        $fallback)
+    {
+        $ENV{CX_ROOT}=$fallback;
+    }
+    if (!-x "$ENV{CX_ROOT}/bin/cxmenu" or !-f "$ENV{CX_ROOT}/bin/cxmenu")
+    {
+        my $name0=$0;
+        $name0 =~ s+^.*/++;
+        print STDERR "$name0:error: could not find CrossOver in '$ENV{CX_ROOT}'\n";
+        exit 1;
+    }
+    return $ENV{CX_ROOT};
+}
+
+BEGIN {
+    unshift @INC, locate_cx_root() . "/lib/perl";
+}
+# Don't use CXLog in this script!
+
+
+# Process command-line options
+my $opt_fifo;
+my $opt_log;
+my $opt_help;
+require CXOpts;
+my $cxopts=CXOpts->new();
+$cxopts->add_options(["head=s"   => \$max_head,
+                      "tail=s"   => \$max_tail,
+                      "extra=s"  => \$max_extra,
+                      "fifo=s"   => \$opt_fifo,
+                      "log=s"    => \$opt_log,
+                      "?|h|help" => \$opt_help
+                     ]);
+my $err=$cxopts->parse();
+
+
+# Validate the command line options
+my $usage;
+if ($err)
+{
+    print STDERR "$name0:error: $err\n";
+    $usage=2;
+}
+elsif ($opt_help)
+{
+    $usage=0;
+}
+else
+{
+    $max_tail=$max_head if (!defined $max_tail);
+    if (!defined $max_extra)
+    {
+        $max_extra=$max_tail/5;
+    }
+    elsif ($max_extra>=$max_tail)
+    {
+        print STDERR "$name0:error: 'extra' must be less than 'tail'\n";
+        $usage=2;
+    }
+}
+
+
+# Print usage
+if (defined $usage)
+{
+    if ($usage)
+    {
+        print STDERR "$name0:error: try '$name0 --help' for more information\n";
+        exit $usage;
+    }
+    print "Usage: $name0 [--help] [--head N] [--tail N] [--extra N] [--fifo INPUT] [--log LOGFILE]\n";
+
+    print "\n";
+    print "Gathers the debug output of multiple applications and generates a single\n";
+    print "log while limiting its size.\n";
+
+    print "\n";
+    print "Options:\n";
+    print "  --head N      Keep the N first lines of the log\n";
+    print "  --tail N      Keep the N last lines of the log\n";
+    print "  --extra N     Keep up to N additional important lines\n";
+    print "  --fifo INPUT  Create a fifo from which the log is read\n";
+    print "                Also runs $name0 in the background\n";
+    print "  --log LOGFILE Save the log in this file\n";
+    print "  --help, -h    Shows this help message\n";
+    exit 0;
+}
+
+my $retcode=1;
+
+
+# Open the output file
+my $out;
+if (defined $opt_log)
+{
+    if (!open($out, ">", $opt_log))
+    {
+        print STDERR "$name0:error: unable to open '$opt_log' for writing\n";
+        goto EXIT;
+    }
+}
+else
+{
+    # Append to stdout
+    open($out, ">>&=1");
+}
+
+# Open the input file
+my $in;
+if (defined $opt_fifo)
+{
+    if (-e $opt_fifo and !unlink $opt_fifo)
+    {
+        print STDERR "$name0:error: '$opt_fifo' already exists and is in the way\n";
+        goto EXIT;
+    }
+    my $rc=system("mkfifo","-m","644","$opt_fifo");
+    if ($rc)
+    {
+        print STDERR "$name0:error: unable to create '$opt_fifo' (rc=$rc)\n";
+        goto EXIT;
+    }
+
+    # Now we must fork in the background
+    my $pid=fork();
+    if ($pid)
+    {
+        print "$pid\n";
+        exit 0;
+    }
+
+    # Redirect stdout to some place harmless so the caller does not block
+    # indefinitely if running cxlogfilter in backquotes, and so file
+    # descriptor 1 is not reused for something else.
+    open(STDOUT, ">&STDERR") if ($opt_log);
+
+    # This call blocks until someone opens the fifo for writing
+    if (!open($in, "<", $opt_fifo))
+    {
+        print STDERR "$name0:error: unable to open '$opt_fifo' for reading\n";
+        goto EXIT;
+    }
+}
+else
+{
+    # Read from stdin
+    open($in, "<&=0");
+}
+
+
+# Pass the head of the file as is
+my $line_count=0;
+my $stop;
+while (<$in>)
+{
+    print $out $_;
+    $line_count++;
+    if ($_ eq ":cxlogfilter:exit\n")
+    {
+        $stop=1;
+        last;
+    }
+    last if ($line_count == $max_head);
+}
+
+
+# Filter the tail
+my $last_out=$line_count;
+my $extra=0;
+my @buffer;
+my $pos=0;
+
+sub print_skipped($)
+{
+    my ($out)=@_;
+    if ($last_out<$line_count-$max_tail)
+    {
+        print $out "\n[---------- skipped lines ",$last_out+1," - ",$line_count-$max_tail," ----------]\n\n";
+        $extra++;
+    }
+}
+
+if (!$stop)
+{
+    while (<$in>)
+    {
+        if (defined $buffer[$pos] and $buffer[$pos] =~ /^(?:\*\*(?:\*\*\*)?|....:Starting process|WineDbg starting on pid) / and $extra<$max_extra)
+        {
+            # This is an important line, we should preserve it
+            print_skipped($out) if ($last_out<$line_count-$max_tail);
+            if ($buffer[$pos] =~ /^(?:\*\* |\*\*\*\*\* )/)
+            {
+                $last_out=$line_count-$max_tail+3;
+                my $p=$pos;
+                for (my $i=0;$i<3;$i++)
+                {
+                    print $out $buffer[$p];
+                    $buffer[$p]=undef;
+                    $p=0 if (++$p == $max_tail);
+                }
+                $extra+=3;
+            }
+            elsif ($buffer[$pos] =~ /^WineDbg starting on pid /)
+            {
+                $last_out=$line_count-$max_tail;
+                my $stop;
+                my $p=$pos;
+                while (!$stop)
+                {
+                    $stop=1 if ($buffer[$p] =~ /^WineDbg terminated on /);
+                    print $out $buffer[$p];
+                    $buffer[$p]=undef;
+                    $last_out++;
+                    $p=0 if (++$p == $max_tail);
+                    last if (++$extra == $max_extra);
+                }
+            }
+            elsif ($buffer[$pos] =~ /^....:Starting process /)
+            {
+                $last_out=$line_count-$max_tail+1;
+                print $out $buffer[$pos];
+                $buffer[$pos]=undef;
+                $extra++;
+            }
+        }
+        $buffer[$pos++]=$_;
+        $pos=0 if ($pos == $max_tail);
+        $line_count++;
+        last if ($_ eq ":cxlogfilter:exit\n");
+    }
+}
+close($in);
+
+
+# Print the lines that are still in the buffer
+if ($line_count<=$max_tail)
+{
+    print $out @buffer;
+}
+else
+{
+    # The log got truncated
+    print_skipped($out);
+    for (my $i=$pos;$i<$max_tail;$i++)
+    {
+        print $out $buffer[$i] if (defined $buffer[$i]);
+    }
+    for (my $i=0;$i<$pos;$i++)
+    {
+        print $out $buffer[$i] if (defined $buffer[$i]);
+    }
+}
+$retcode=0;
+
+EXIT:
+close($out) if ($out);
+unlink $opt_fifo if (defined $opt_fifo);
+exit $retcode;

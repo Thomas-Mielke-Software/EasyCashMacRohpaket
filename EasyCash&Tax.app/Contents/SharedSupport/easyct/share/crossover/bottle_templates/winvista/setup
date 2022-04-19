@@ -1,0 +1,131 @@
+#!/usr/bin/perl
+# (c) Copyright 2003-2008, 2010. CodeWeavers, Inc.
+use warnings;
+use strict;
+
+
+BEGIN {
+    unshift @INC, "$ENV{CX_ROOT}/lib/perl";
+}
+use CXLog;
+use CXUtils;
+
+my $template="winvista";
+my $templatedir="$ENV{CX_ROOT}/share/crossover/bottle_templates/$template";
+
+
+#####
+#
+# Main
+#
+#####
+
+# Parse the command line arguments
+my $opt_create;
+my $opt_upgrade;
+my $opt_description;
+my $opt_updater;
+my $opt_old_version;
+my $opt_verbose;
+my $opt_help;
+require CXOpts;
+my $cxopts=CXOpts->new();
+$cxopts->add_options(["create"        => \$opt_create,
+                      "upgrade"       => \$opt_upgrade,
+                      "description=s" => \$opt_description,
+                      "updater=s"     => \$opt_updater,
+                      "old-version=s" => \$opt_old_version,
+                      "verbose!"      => \$opt_verbose,
+                      "?|h|help"      => \$opt_help
+                     ]);
+my $err=$cxopts->parse();
+CXLog::fdopen(2) if ($opt_verbose);
+
+
+# Verify command line options
+my $usage;
+if ($err)
+{
+    cxerr("$err\n");
+    $usage=2;
+}
+elsif ($opt_help)
+{
+    $usage=0;
+}
+else
+{
+    foreach my $var ("CX_BOTTLE", "WINEPREFIX")
+    {
+        if (!defined $ENV{$var})
+        {
+            cxerr("\$$var is not set\n");
+            $usage=1;
+        }
+    }
+
+    my $cmd_count=0;
+    $cmd_count++ if ($opt_create);
+    $cmd_count++ if ($opt_upgrade);
+    if ($cmd_count>1)
+    {
+        cxerr("--create and --upgrade are mutually exclusive\n");
+        $usage=2;
+    }
+    elsif ($cmd_count==0)
+    {
+        $opt_create=1 if (!-d $ENV{WINEPREFIX});
+    }
+    elsif (!-d $ENV{WINEPREFIX})
+    {
+        cxerr("'$ENV{WINEPREFIX}' does not exist\n");
+        $usage=1;
+    }
+    $opt_old_version=~s/[^0-9.].*$// if (defined $opt_old_version);
+}
+
+
+# Print usage
+if (defined $usage)
+{
+    my $name0=cxname0();
+    print STDERR "Usage: $name0 --create [--updater update_script] [--verbose]\n";
+    print STDERR "or     $name0 --upgrade [--old-version oldversion] [--verbose]\n";
+    exit $usage;
+}
+
+
+# And finally, create/upgrade the bottle
+if ($opt_create)
+{
+    cxerr("This OEM version does not allow creating extra bottles\n");
+    exit 1;
+}
+else
+{
+    my $params;
+    unshift @INC, $templatedir;
+    require CXBT_winvista;
+    my $bt=CXBT_winvista->new();
+    require CXBottle;
+    my $cxconfig=CXBottle::get_crossover_config();
+    $params->{old_version}=$opt_old_version || "7.0.0";
+    require CXConfig;
+    my $cxbottle=CXConfig->new("$ENV{WINEPREFIX}/cxbottle.conf");
+    $opt_updater=expand_string($cxbottle->get("Bottle", "Updater"));
+    $params->{scope}=(defined $opt_updater ? "managed" : "private");
+    my $rc=$bt->upgrade($cxconfig, $params);
+    if (!$rc)
+    {
+        cxerr($@);
+        exit 1;
+    }
+    cxwarn($@) if ($@);
+}
+if ($opt_updater)
+{
+    cxsystem("$ENV{CX_ROOT}/bin/wine", "--scope", "managed",
+             "--ux-app", $opt_updater, "--snapshot");
+}
+
+exit 0;

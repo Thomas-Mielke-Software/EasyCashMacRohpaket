@@ -1,0 +1,428 @@
+1: 0 2: 1031 3: 1252 
+Meldungstyp: 0, Argument: 1031
+Meldungstyp: 1, Argument: Microsoft Visual C++ 2008 Redistributable - x86 9.0.30729
+Aktion 4:53:16: INSTALL. 
+1: 0 2: 1031 3: 1252 
+1: 0 2: 1031 3: 1252 
+Meldungstyp: 0, Argument: 1031
+Meldungstyp: 1, Argument: Microsoft Visual C++ 2008 Redistributable - x86 9.0.30729
+Aktion 4:53:16: INSTALL. 
+1: Microsoft Visual C++ 2008 Redistributable - x86 9.0.30729 2: {6AFCA4E1-9B78-3640-8F72-A7BF33448200} 
+Aktion 4:53:16: FindRelatedProducts. Searching for related applications
+Aktion 4:53:16: CA_SystemFolder_x86.3643236F_FC70_11D3_A536_0090278A1BB8. 
+Aktion 4:53:16: CA_WindowsFolder_x86.3643236F_FC70_11D3_A536_0090278A1BB8. 
+Aktion 4:53:16: LaunchConditions. Evaluating launch conditions
+Aktion 4:53:16: AppSearch. Searching for installed applications
+Property: REDISTFOUNDVERLANG, Signature: DetectRedistVerLangSignature
+Property: REDISTFOUNDVER, Signature: DetectRedistVerSignature
+Property: JSHFOUNDVER, Signature: DetectJSHVerSignature
+Property: OCMFOUNDVER, Signature: DetectOCMRedistVerSignature
+Property: OCMFOUNDVERLANG, Signature: DetectOCMRedistVerLangSignature
+Aktion 4:53:16: ValidateProductID. 
+Aktion 4:53:16: CA_AdminToolsFolder_x86.3643236F_FC70_11D3_A536_0090278A1BB8. 
+Aktion 4:53:16: CA_AppDataFolder_x86.3643236F_FC70_11D3_A536_0090278A1BB8. 
+Aktion 4:53:16: CA_CommonAppDataFolder_x86.3643236F_FC70_11D3_A536_0090278A1BB8. 
+Aktion 4:53:16: CA_CommonFilesFolder_x86.3643236F_FC70_11D3_A536_0090278A1BB8. 
+Aktion 4:53:16: CA_DesktopFolder_x86.3643236F_FC70_11D3_A536_0090278A1BB8. 
+Aktion 4:53:16: CA_ProgramFilesFolder_x86.3643236F_FC70_11D3_A536_0090278A1BB8. 
+Aktion 4:53:16: CA_ProgramFilesFolder2_x86.3643236F_FC70_11D3_A536_0090278A1BB8. 
+Aktion 4:53:16: CA_ProgramMenuFolder_x86.3643236F_FC70_11D3_A536_0090278A1BB8. 
+Aktion 4:53:16: CA_StartMenuFolder_x86.3643236F_FC70_11D3_A536_0090278A1BB8. 
+Aktion 4:53:16: CA_System16Folder_x86.3643236F_FC70_11D3_A536_0090278A1BB8. 
+Aktion 4:53:16: CA_System64Folder_x86.3643236F_FC70_11D3_A536_0090278A1BB8. 
+Aktion 4:53:16: CA_TempFolder_x86.3643236F_FC70_11D3_A536_0090278A1BB8. 
+Aktion 4:53:16: CA_WindowsVolume_x86.3643236F_FC70_11D3_A536_0090278A1BB8. 
+Aktion 4:53:16: WindowsFolder.21022.08.Microsoft_VC90_OpenMP_x86.RTM. 
+Aktion 4:53:16: WindowsFolder.21022.08.policy_9_0_Microsoft_VC90_OpenMP_x86.RTM. 
+Aktion 4:53:16: WindowsFolder.30729.01.Microsoft_VC90_ATL_x86.SP. 
+Aktion 4:53:16: WindowsFolder.30729.01.Microsoft_VC90_CRT_x86.SP. 
+Aktion 4:53:16: WindowsFolder.30729.01.Microsoft_VC90_MFC_x86.SP. 
+Aktion 4:53:16: WindowsFolder.30729.01.Microsoft_VC90_MFCLOC_x86.SP. 
+Aktion 4:53:16: WindowsFolder.30729.01.policy_9_0_Microsoft_VC90_ATL_x86.SP. 
+Aktion 4:53:16: WindowsFolder.30729.01.policy_9_0_Microsoft_VC90_CRT_x86.SP. 
+Aktion 4:53:16: WindowsFolder.30729.01.policy_9_0_Microsoft_VC90_MFC_x86.SP. 
+Aktion 4:53:16: WindowsFolder.30729.01.policy_9_0_Microsoft_VC90_MFCLOC_x86.SP. 
+Aktion 4:53:16: CostInitialize. Computing space requirements
+Aktion 4:53:16: FileCost. Computing space requirements
+Aktion 4:53:16: CostFinalize. Computing space requirements
+Aktion 4:53:16: SetODBCFolders. Initializing ODBC directories
+Aktion 4:53:16: InstallValidate. Validating install
+Aktion 4:53:16: InstallInitialize. 
+Aktion 4:53:16: AllocateRegistrySpace. Allocating registry space
+Free space: 0
+Aktion 4:53:16: ProcessComponents. Updating component registration
+Aktion 4:53:16: UnpublishComponents. Unpublishing Qualified Components
+Aktion 4:53:16: MsiUnpublishAssemblies. Unpublishing assembly information
+Aktion 4:53:16: UnpublishFeatures. Unpublishing Product Features
+Aktion 4:53:16: StopServices. Stopping services
+Aktion 4:53:16: DeleteServices. Deleting services
+Aktion 4:53:16: UnregisterComPlus. Unregistering COM+ Applications and Components
+Aktion 4:53:16: SelfUnregModules. Unregistering modules
+Aktion 4:53:16: UnregisterTypeLibraries. Unregistering type libraries
+Aktion 4:53:16: RemoveODBC. Removing ODBC components
+Aktion 4:53:16: UnregisterFonts. Unregistering fonts
+Aktion 4:53:16: RemoveRegistryValues. Removing system registry values
+Aktion 4:53:16: UnregisterClassInfo. Unregister Class servers
+Aktion 4:53:16: UnregisterMIMEInfo. Unregistering MIME info
+Aktion 4:53:16: RemoveIniValues. Removing INI files entries
+Aktion 4:53:16: RemoveShortcuts. Removing shortcuts
+Aktion 4:53:16: RemoveEnvironmentStrings. Updating environment strings
+Aktion 4:53:16: RemoveDuplicateFiles. Removing duplicated files
+Aktion 4:53:16: RemoveFiles. Removing files
+Aktion 4:53:16: RemoveFolders. Removing folders
+Aktion 4:53:16: CreateFolders. Creating folders
+Aktion 4:53:16: MoveFiles. Moving files
+Aktion 4:53:16: InstallFiles. Copying new files
+Aktion 4:53:16: DuplicateFiles. Creating duplicate files
+Aktion 4:53:16: BindImage. Binding executables
+Aktion 4:53:16: RegisterClassInfo. Registering Class servers
+Aktion 4:53:16: RegisterMIMEInfo. Registering MIME info
+Aktion 4:53:16: RegisterTypeLibraries. Registering type libraries
+Aktion 4:53:16: WriteRegistryValues. Writing system registry values
+Aktion 4:53:16: WriteIniValues. Writing INI files values
+Aktion 4:53:16: WriteEnvironmentStrings. Updating environment strings
+Aktion 4:53:16: RegisterFonts. Registering fonts
+Aktion 4:53:16: InstallODBC. Installing ODBC components
+Aktion 4:53:16: SelfRegModules. Registering modules
+Aktion 4:53:16: RegisterComPlus. Registering COM+ Applications and Components
+Aktion 4:53:16: InstallServices. Installing new services
+Aktion 4:53:16: StartServices. Starting services
+Aktion 4:53:16: RegisterUser. Registering user
+Aktion 4:53:16: RegisterProduct. Registering product
+Aktion 4:53:16: PublishComponents. Publishing Qualified Components
+Aktion 4:53:16: MsiPublishAssemblies. Publishing assembly information
+Aktion 4:53:16: PublishFeatures. Publishing Product Features
+Aktion 4:53:16: PublishProduct. Publishing product information
+Aktion 4:53:16: CreateShortcuts. Creating shortcuts
+Aktion 4:53:16: InstallFinalize. 
+Aktion 4:53:16: ProcessComponents. Updating component registration
+1: {6AFCA4E1-9B78-3640-8F72-A7BF33448200} 2: {86C9D5AA-F00C-4921-B3F2-C60AF92E2844} 3: 02:\SOFTWARE\Microsoft\DevDiv\VC\Servicing\9.0\SP 
+1: {6AFCA4E1-9B78-3640-8F72-A7BF33448200} 2: {5B0967B5-39F1-4F25-BC1D-607FF3992F63} 3: 02:\SOFTWARE\Microsoft\DevDiv\VC\Servicing\9.0\RED\1031\Install 
+1: {6AFCA4E1-9B78-3640-8F72-A7BF33448200} 2: {BE8E177A-01E1-4ECB-A48A-10E493CD2C60} 3: C:\Program Files\Common Files\Microsoft Shared\VC\msdia90.dll 
+1: {6AFCA4E1-9B78-3640-8F72-A7BF33448200} 2: {52FE3B2D-BF22-3960-AF34-630EE5E36E32} 3: 02:\SOFTWARE\Microsoft\Windows\CurrentVersion\SideBySide\Installations\x86_Microsoft.VC90.ATL_1fc8b3b9a1e18e3b_x-ww_fe8be9c7\nosxs\ 
+1: {6AFCA4E1-9B78-3640-8F72-A7BF33448200} 2: {AE56AAF5-F3C0-3D4B-8859-A1E50A3E27BF} 3: <\Microsoft.VC90.ATL,version="9.0.30729.1",publicKeyToken="1fc8b3b9a1e18e3b",processorArchitecture="x86",type="win32" 
+1: {6AFCA4E1-9B78-3640-8F72-A7BF33448200} 2: {FF9475E6-2D23-33E2-A4DA-5AC236E82E20} 3: 02:\SOFTWARE\Microsoft\Windows\CurrentVersion\SideBySide\Installations\x86_Microsoft.VC90.ATL_1fc8b3b9a1e18e3b_9.0.30729.1_x-ww_d01483b2\downlevel_payload.9.0.30729.1\ 
+1: {6AFCA4E1-9B78-3640-8F72-A7BF33448200} 2: {942A5E85-8CB5-35CD-8B9B-14C6D9DC030D} 3: 02:\SOFTWARE\Microsoft\Windows\CurrentVersion\SideBySide\Installations\x86_Microsoft.VC90.ATL_1fc8b3b9a1e18e3b_9.0.30729.1_x-ww_d01483b2\downlevel_manifest.9.0.30729.1\ 
+1: {6AFCA4E1-9B78-3640-8F72-A7BF33448200} 2: {229E8F96-1AE0-32E6-8428-D2CBCA122740} 3: <\policy.9.0.Microsoft.VC90.ATL,version="9.0.30729.1",publicKeyToken="1fc8b3b9a1e18e3b",processorArchitecture="x86",type="win32-policy" 
+1: {6AFCA4E1-9B78-3640-8F72-A7BF33448200} 2: {16F2B87D-88F2-35FE-9251-B0697F30DB9B} 3: 02:\SOFTWARE\Microsoft\Windows\CurrentVersion\SideBySide\Installations\x86_policy.9.0.Microsoft.VC90.ATL_1fc8b3b9a1e18e3b_9.0.30729.1_x-ww_f80e86f8\downlevel_manifest.9.0.30729.1\ 
+1: {6AFCA4E1-9B78-3640-8F72-A7BF33448200} 2: {571D121B-1964-392A-965A-00193D5AE1A1} 3: 02:\SOFTWARE\Microsoft\Windows\CurrentVersion\SideBySide\Installations\x86_Microsoft.VC90.CRT_1fc8b3b9a1e18e3b_x-ww_1742743b\nosxs\ 
+1: {6AFCA4E1-9B78-3640-8F72-A7BF33448200} 2: {6D321E57-3E99-3B87-BF23-2CDFF3361CB4} 3: <\Microsoft.VC90.CRT,version="9.0.30729.1",publicKeyToken="1fc8b3b9a1e18e3b",processorArchitecture="x86",type="win32" 
+1: {6AFCA4E1-9B78-3640-8F72-A7BF33448200} 2: {BF95E909-73F5-3378-BA9E-5AA63B70230F} 3: 02:\SOFTWARE\Microsoft\Windows\CurrentVersion\SideBySide\Installations\x86_Microsoft.VC90.CRT_1fc8b3b9a1e18e3b_9.0.30729.1_x-ww_6f74963e\downlevel_payload.9.0.30729.1\ 
+1: {6AFCA4E1-9B78-3640-8F72-A7BF33448200} 2: {0679E22E-6B33-3458-B7E6-877AC9585626} 3: 02:\SOFTWARE\Microsoft\Windows\CurrentVersion\SideBySide\Installations\x86_Microsoft.VC90.CRT_1fc8b3b9a1e18e3b_9.0.30729.1_x-ww_6f74963e\downlevel_manifest.9.0.30729.1\ 
+1: {6AFCA4E1-9B78-3640-8F72-A7BF33448200} 2: {3C582984-7607-3E35-A337-D3D327097351} 3: <\policy.9.0.Microsoft.VC90.CRT,version="9.0.30729.1",publicKeyToken="1fc8b3b9a1e18e3b",processorArchitecture="x86",type="win32-policy" 
+1: {6AFCA4E1-9B78-3640-8F72-A7BF33448200} 2: {4438C47F-9FE3-3D40-A49F-DEFB174F7826} 3: 02:\SOFTWARE\Microsoft\Windows\CurrentVersion\SideBySide\Installations\x86_policy.9.0.Microsoft.VC90.CRT_1fc8b3b9a1e18e3b_9.0.30729.1_x-ww_976e9984\downlevel_manifest.9.0.30729.1\ 
+1: {6AFCA4E1-9B78-3640-8F72-A7BF33448200} 2: {F783A63D-E10C-3F2F-B3C9-BDC1F98EDBCD} 3: 02:\SOFTWARE\Microsoft\Windows\CurrentVersion\SideBySide\Installations\x86_Microsoft.VC90.MFC_1fc8b3b9a1e18e3b_x-ww_aef5eff6\nosxs\ 
+1: {6AFCA4E1-9B78-3640-8F72-A7BF33448200} 2: {CB438DD9-2B1B-32E0-9AA6-D6DA82CE9D97} 3: <\Microsoft.VC90.MFC,version="9.0.30729.1",publicKeyToken="1fc8b3b9a1e18e3b",processorArchitecture="x86",type="win32" 
+1: {6AFCA4E1-9B78-3640-8F72-A7BF33448200} 2: {6EB582E3-56D9-3B4F-8FD3-E8113840381F} 3: 02:\SOFTWARE\Microsoft\Windows\CurrentVersion\SideBySide\Installations\x86_Microsoft.VC90.MFC_1fc8b3b9a1e18e3b_9.0.30729.1_x-ww_405b0943\downlevel_payload.9.0.30729.1\ 
+1: {6AFCA4E1-9B78-3640-8F72-A7BF33448200} 2: {06B10CCF-4FAB-363F-A7C6-095A32DB6376} 3: 02:\SOFTWARE\Microsoft\Windows\CurrentVersion\SideBySide\Installations\x86_Microsoft.VC90.MFC_1fc8b3b9a1e18e3b_9.0.30729.1_x-ww_405b0943\downlevel_manifest.9.0.30729.1\ 
+1: {6AFCA4E1-9B78-3640-8F72-A7BF33448200} 2: {634088A3-D67E-336D-9425-767BA6907C74} 3: <\policy.9.0.Microsoft.VC90.MFC,version="9.0.30729.1",publicKeyToken="1fc8b3b9a1e18e3b",processorArchitecture="x86",type="win32-policy" 
+1: {6AFCA4E1-9B78-3640-8F72-A7BF33448200} 2: {DE4B6619-A930-3448-9903-DAFD2B57F2F5} 3: 02:\SOFTWARE\Microsoft\Windows\CurrentVersion\SideBySide\Installations\x86_policy.9.0.Microsoft.VC90.MFC_1fc8b3b9a1e18e3b_9.0.30729.1_x-ww_68550c89\downlevel_manifest.9.0.30729.1\ 
+1: {6AFCA4E1-9B78-3640-8F72-A7BF33448200} 2: {8CA8E8AC-9D76-33C3-A723-9F65888DEB09} 3: 02:\SOFTWARE\Microsoft\Windows\CurrentVersion\SideBySide\Installations\x86_Microsoft.VC90.MFCLOC_1fc8b3b9a1e18e3b_x-ww_345c8c36\nosxs\ 
+1: {6AFCA4E1-9B78-3640-8F72-A7BF33448200} 2: {6749BB01-D73A-3743-8E13-6381D11CA8F8} 3: <\Microsoft.VC90.MFCLOC,version="9.0.30729.1",publicKeyToken="1fc8b3b9a1e18e3b",processorArchitecture="x86",type="win32" 
+1: {6AFCA4E1-9B78-3640-8F72-A7BF33448200} 2: {D6DD172F-BFFE-3591-9627-C35E4A536610} 3: 02:\SOFTWARE\Microsoft\Windows\CurrentVersion\SideBySide\Installations\x86_Microsoft.VC90.MFCLOC_1fc8b3b9a1e18e3b_9.0.30729.1_x-ww_b0db7d03\downlevel_payload.9.0.30729.1\ 
+1: {6AFCA4E1-9B78-3640-8F72-A7BF33448200} 2: {C2894889-F138-3D86-BCF5-5F9BEB77AD16} 3: 02:\SOFTWARE\Microsoft\Windows\CurrentVersion\SideBySide\Installations\x86_Microsoft.VC90.MFCLOC_1fc8b3b9a1e18e3b_9.0.30729.1_x-ww_b0db7d03\downlevel_manifest.9.0.30729.1\ 
+1: {6AFCA4E1-9B78-3640-8F72-A7BF33448200} 2: {4A76FC7C-9919-346C-93AE-C5623D64C23A} 3: <\policy.9.0.Microsoft.VC90.MFCLOC,version="9.0.30729.1",publicKeyToken="1fc8b3b9a1e18e3b",processorArchitecture="x86",type="win32-policy" 
+1: {6AFCA4E1-9B78-3640-8F72-A7BF33448200} 2: {64C9CF3A-5D3D-3B88-BBBB-F5A500F95787} 3: 02:\SOFTWARE\Microsoft\Windows\CurrentVersion\SideBySide\Installations\x86_policy.9.0.Microsoft.VC90.MFCLOC_1fc8b3b9a1e18e3b_9.0.30729.1_x-ww_254c246b\downlevel_manifest.9.0.30729.1\ 
+1: {6AFCA4E1-9B78-3640-8F72-A7BF33448200} 2: {A85D53AA-906D-31C5-96E3-E21BB9154E2C} 3: 02:\SOFTWARE\Microsoft\Windows\CurrentVersion\SideBySide\Installations\x86_Microsoft.VC90.OpenMP_1fc8b3b9a1e18e3b_x-ww_e6ef74df\nosxs\ 
+1: {6AFCA4E1-9B78-3640-8F72-A7BF33448200} 2: {D511F4F3-A911-32CF-AC11-9C97EF948BFC} 3: <\Microsoft.VC90.OpenMP,version="9.0.21022.8",publicKeyToken="1fc8b3b9a1e18e3b",processorArchitecture="x86",type="win32" 
+1: {6AFCA4E1-9B78-3640-8F72-A7BF33448200} 2: {B16F86FC-BD94-30FA-98AA-17ABE54F0478} 3: 02:\SOFTWARE\Microsoft\Windows\CurrentVersion\SideBySide\Installations\x86_Microsoft.VC90.OpenMP_1fc8b3b9a1e18e3b_9.0.21022.8_x-ww_ecc42bd1\downlevel_payload.9.0.21022.8\ 
+1: {6AFCA4E1-9B78-3640-8F72-A7BF33448200} 2: {28B6B10C-E41F-302B-A673-01F436427522} 3: 02:\SOFTWARE\Microsoft\Windows\CurrentVersion\SideBySide\Installations\x86_Microsoft.VC90.OpenMP_1fc8b3b9a1e18e3b_9.0.21022.8_x-ww_ecc42bd1\downlevel_manifest.9.0.21022.8\ 
+1: {6AFCA4E1-9B78-3640-8F72-A7BF33448200} 2: {8D71CE57-BDC3-34B0-ADAD-EA4C5AFC9664} 3: <\policy.9.0.Microsoft.VC90.OpenMP,version="9.0.21022.8",publicKeyToken="1fc8b3b9a1e18e3b",processorArchitecture="x86",type="win32-policy" 
+1: {6AFCA4E1-9B78-3640-8F72-A7BF33448200} 2: {649A198A-C19D-325F-BF3A-C7EAE62F5EF6} 3: 02:\SOFTWARE\Microsoft\Windows\CurrentVersion\SideBySide\Installations\x86_policy.9.0.Microsoft.VC90.OpenMP_1fc8b3b9a1e18e3b_9.0.21022.8_x-ww_6134d339\downlevel_manifest.9.0.21022.8\ 
+1: {6AFCA4E1-9B78-3640-8F72-A7BF33448200} 2: {6BB75EE4-2E8B-483E-A84A-771343795564} 3: C:\ 
+1: {6AFCA4E1-9B78-3640-8F72-A7BF33448200} 2: {D5C68479-A100-4571-843A-3EB03F7B573B} 3: C:\ 
+1: {6AFCA4E1-9B78-3640-8F72-A7BF33448200} 2: {61289ED6-AD7F-4784-A69A-218A5E070E51} 3: C:\ 
+1: {6AFCA4E1-9B78-3640-8F72-A7BF33448200} 2: {F1193CC3-2CF7-49D3-B86F-4740AD991F31} 3: C:\ 
+1: {6AFCA4E1-9B78-3640-8F72-A7BF33448200} 2: {7AB6C588-36BD-4A06-A599-E25ABAA4C433} 3: C:\ 
+1: {6AFCA4E1-9B78-3640-8F72-A7BF33448200} 2: {608B9F35-4690-4590-A4DD-0AE3FD7F56ED} 3: C:\ 
+1: {6AFCA4E1-9B78-3640-8F72-A7BF33448200} 2: {AA57A416-7111-4C96-BBA8-B6F83005000B} 3: C:\ 
+1: {6AFCA4E1-9B78-3640-8F72-A7BF33448200} 2: {E7C6451F-0B77-43EC-AEBD-F0AE4EBDB07C} 3: C:\ 
+Aktion 4:53:16: UnpublishComponents. Unpublishing Qualified Components
+Aktion 4:53:16: MsiUnpublishAssemblies. Unpublishing assembly information
+Aktion 4:53:16: UnpublishFeatures. Unpublishing Product Features
+Aktion 4:53:16: StopServices. Stopping services
+Aktion 4:53:16: DeleteServices. Deleting services
+Aktion 4:53:16: SelfUnregModules. Unregistering modules
+Aktion 4:53:16: UnregisterTypeLibraries. Unregistering type libraries
+Aktion 4:53:16: RemoveODBC. Removing ODBC components
+Aktion 4:53:16: UnregisterFonts. Unregistering fonts
+Aktion 4:53:16: RemoveRegistryValues. Removing system registry values
+Aktion 4:53:16: UnregisterClassInfo. Unregister Class servers
+Aktion 4:53:16: UnregisterMIMEInfo. Unregistering MIME info
+Aktion 4:53:16: RemoveIniValues. Removing INI files entries
+Aktion 4:53:16: RemoveShortcuts. Removing shortcuts
+Aktion 4:53:16: RemoveEnvironmentStrings. Updating environment strings
+Aktion 4:53:16: RemoveDuplicateFiles. Removing duplicated files
+Aktion 4:53:16: RemoveFiles. Removing files
+File: atl90.dll, Directory: payload.30729.01.Microsoft_VC90_ATL_x86.SP
+File: x86_Microsoft.VC90.OpenMP_1fc8b3b9a1e18e3b_9.0.21022.8_x-ww_ecc42bd1.cat, Directory: WinSxsManifests.21022.08.Microsoft_VC90_OpenMP_x86.RTM
+File: 9.0.21022.8.cat, Directory: policydir.21022.08.policy_9_0_Microsoft_VC90_OpenMP_x86.RTM
+File: x86_Microsoft.VC90.ATL_1fc8b3b9a1e18e3b_9.0.30729.1_x-ww_d01483b2.cat, Directory: WinSxsManifests.30729.01.Microsoft_VC90_ATL_x86.SP
+File: x86_Microsoft.VC90.CRT_1fc8b3b9a1e18e3b_9.0.30729.1_x-ww_6f74963e.cat, Directory: WinSxsManifests.30729.01.Microsoft_VC90_CRT_x86.SP
+File: x86_Microsoft.VC90.MFC_1fc8b3b9a1e18e3b_9.0.30729.1_x-ww_405b0943.cat, Directory: WinSxsManifests.30729.01.Microsoft_VC90_MFC_x86.SP
+File: x86_Microsoft.VC90.MFCLOC_1fc8b3b9a1e18e3b_9.0.30729.1_x-ww_b0db7d03.cat, Directory: WinSxsManifests.30729.01.Microsoft_VC90_MFCLOC_x86.SP
+File: 9.0.30729.1.cat, Directory: policydir.30729.01.policy_9_0_Microsoft_VC90_ATL_x86.SP
+File: 9.0.30729.1.cat, Directory: policydir.30729.01.policy_9_0_Microsoft_VC90_CRT_x86.SP
+File: 9.0.30729.1.cat, Directory: policydir.30729.01.policy_9_0_Microsoft_VC90_MFC_x86.SP
+File: 9.0.30729.1.cat, Directory: policydir.30729.01.policy_9_0_Microsoft_VC90_MFCLOC_x86.SP
+File: install.res.1031.dll, Directory: CSetupMM_URT_x86.3643236F_FC70_11D3_A536_0090278A1BB8
+File: eula.1031.txt, Directory: DR_54322.3643236F_FC70_11D3_A536_0090278A1BB8
+File: globdata.ini, Directory: DR_54322.3643236F_FC70_11D3_A536_0090278A1BB8
+File: install.exe, Directory: CSetupMM_URT_x86.3643236F_FC70_11D3_A536_0090278A1BB8
+File: install.ini, Directory: DR_54322.3643236F_FC70_11D3_A536_0090278A1BB8
+File: VC_RED.MSI, Directory: DR_54322.3643236F_FC70_11D3_A536_0090278A1BB8
+File: vcredist.bmp, Directory: DR_54322.3643236F_FC70_11D3_A536_0090278A1BB8
+File: VC_RED.cab, Directory: DR_54322.3643236F_FC70_11D3_A536_0090278A1BB8
+File: msdia90.dll, Directory: VCMsM.3643236F_FC70_11D3_A536_0090278A1BB8
+File: x86_Microsoft.VC90.OpenMP_1fc8b3b9a1e18e3b_9.0.21022.8_x-ww_ecc42bd1.manifest, Directory: WinSxsManifests.21022.08.Microsoft_VC90_OpenMP_x86.RTM
+File: x86_Microsoft.VC90.ATL_1fc8b3b9a1e18e3b_9.0.30729.1_x-ww_d01483b2.manifest, Directory: WinSxsManifests.30729.01.Microsoft_VC90_ATL_x86.SP
+File: x86_Microsoft.VC90.CRT_1fc8b3b9a1e18e3b_9.0.30729.1_x-ww_6f74963e.manifest, Directory: WinSxsManifests.30729.01.Microsoft_VC90_CRT_x86.SP
+File: x86_Microsoft.VC90.MFC_1fc8b3b9a1e18e3b_9.0.30729.1_x-ww_405b0943.manifest, Directory: WinSxsManifests.30729.01.Microsoft_VC90_MFC_x86.SP
+File: x86_Microsoft.VC90.MFCLOC_1fc8b3b9a1e18e3b_9.0.30729.1_x-ww_b0db7d03.manifest, Directory: WinSxsManifests.30729.01.Microsoft_VC90_MFCLOC_x86.SP
+File: mfc90.dll, Directory: payload.30729.01.Microsoft_VC90_MFC_x86.SP
+File: mfc90chs.dll, Directory: payload.30729.01.Microsoft_VC90_MFCLOC_x86.SP
+File: mfc90cht.dll, Directory: payload.30729.01.Microsoft_VC90_MFCLOC_x86.SP
+File: mfc90deu.dll, Directory: payload.30729.01.Microsoft_VC90_MFCLOC_x86.SP
+File: mfc90enu.dll, Directory: payload.30729.01.Microsoft_VC90_MFCLOC_x86.SP
+File: mfc90esn.dll, Directory: payload.30729.01.Microsoft_VC90_MFCLOC_x86.SP
+File: mfc90esp.dll, Directory: payload.30729.01.Microsoft_VC90_MFCLOC_x86.SP
+File: mfc90fra.dll, Directory: payload.30729.01.Microsoft_VC90_MFCLOC_x86.SP
+File: mfc90ita.dll, Directory: payload.30729.01.Microsoft_VC90_MFCLOC_x86.SP
+File: mfc90jpn.dll, Directory: payload.30729.01.Microsoft_VC90_MFCLOC_x86.SP
+File: mfc90kor.dll, Directory: payload.30729.01.Microsoft_VC90_MFCLOC_x86.SP
+File: mfc90rus.dll, Directory: payload.30729.01.Microsoft_VC90_MFCLOC_x86.SP
+File: mfc90u.dll, Directory: payload.30729.01.Microsoft_VC90_MFC_x86.SP
+File: mfcm90.dll, Directory: payload.30729.01.Microsoft_VC90_MFC_x86.SP
+File: mfcm90u.dll, Directory: payload.30729.01.Microsoft_VC90_MFC_x86.SP
+File: msvcm90.dll, Directory: payload.30729.01.Microsoft_VC90_CRT_x86.SP
+File: msvcp90.dll, Directory: payload.30729.01.Microsoft_VC90_CRT_x86.SP
+File: msvcr90.dll, Directory: payload.30729.01.Microsoft_VC90_CRT_x86.SP
+File: atl90.dll, Directory: SystemFolder.30729.01.Microsoft_VC90_ATL_x86.SP
+File: mfc90.dll, Directory: SystemFolder.30729.01.Microsoft_VC90_MFC_x86.SP
+File: mfc90chs.dll, Directory: SystemFolder.30729.01.Microsoft_VC90_MFCLOC_x86.SP
+File: mfc90cht.dll, Directory: SystemFolder.30729.01.Microsoft_VC90_MFCLOC_x86.SP
+File: mfc90deu.dll, Directory: SystemFolder.30729.01.Microsoft_VC90_MFCLOC_x86.SP
+File: mfc90enu.dll, Directory: SystemFolder.30729.01.Microsoft_VC90_MFCLOC_x86.SP
+File: mfc90esn.dll, Directory: SystemFolder.30729.01.Microsoft_VC90_MFCLOC_x86.SP
+File: mfc90esp.dll, Directory: SystemFolder.30729.01.Microsoft_VC90_MFCLOC_x86.SP
+File: mfc90fra.dll, Directory: SystemFolder.30729.01.Microsoft_VC90_MFCLOC_x86.SP
+File: mfc90ita.dll, Directory: SystemFolder.30729.01.Microsoft_VC90_MFCLOC_x86.SP
+File: mfc90jpn.dll, Directory: SystemFolder.30729.01.Microsoft_VC90_MFCLOC_x86.SP
+File: mfc90kor.dll, Directory: SystemFolder.30729.01.Microsoft_VC90_MFCLOC_x86.SP
+File: mfc90rus.dll, Directory: SystemFolder.30729.01.Microsoft_VC90_MFCLOC_x86.SP
+File: mfc90u.dll, Directory: SystemFolder.30729.01.Microsoft_VC90_MFC_x86.SP
+File: mfcm90.dll, Directory: SystemFolder.30729.01.Microsoft_VC90_MFC_x86.SP
+File: mfcm90u.dll, Directory: SystemFolder.30729.01.Microsoft_VC90_MFC_x86.SP
+File: msvcm90.dll, Directory: SystemFolder.30729.01.Microsoft_VC90_CRT_x86.SP
+File: msvcp90.dll, Directory: SystemFolder.30729.01.Microsoft_VC90_CRT_x86.SP
+File: msvcr90.dll, Directory: SystemFolder.30729.01.Microsoft_VC90_CRT_x86.SP
+File: vcomp90.dll, Directory: SystemFolder.21022.08.Microsoft_VC90_OpenMP_x86.RTM
+File: 9.0.21022.8.policy, Directory: policydir.21022.08.policy_9_0_Microsoft_VC90_OpenMP_x86.RTM
+File: 9.0.30729.1.policy, Directory: policydir.30729.01.policy_9_0_Microsoft_VC90_ATL_x86.SP
+File: 9.0.30729.1.policy, Directory: policydir.30729.01.policy_9_0_Microsoft_VC90_CRT_x86.SP
+File: 9.0.30729.1.policy, Directory: policydir.30729.01.policy_9_0_Microsoft_VC90_MFC_x86.SP
+File: 9.0.30729.1.policy, Directory: policydir.30729.01.policy_9_0_Microsoft_VC90_MFCLOC_x86.SP
+File: atl90.dll, Directory: payload_ul.30729.01.Microsoft_VC90_ATL_x86.SP
+File: x86_Microsoft.VC90.OpenMP_1fc8b3b9a1e18e3b_9.0.21022.8_x-ww_ecc42bd1.cat, Directory: payload_ul.21022.08.Microsoft_VC90_OpenMP_x86.RTM
+File: 9.0.21022.8.cat, Directory: payload_ul.21022.08.policy_9_0_Microsoft_VC90_OpenMP_x86.RTM
+File: x86_Microsoft.VC90.ATL_1fc8b3b9a1e18e3b_9.0.30729.1_x-ww_d01483b2.cat, Directory: payload_ul.30729.01.Microsoft_VC90_ATL_x86.SP
+File: x86_Microsoft.VC90.CRT_1fc8b3b9a1e18e3b_9.0.30729.1_x-ww_6f74963e.cat, Directory: payload_ul.30729.01.Microsoft_VC90_CRT_x86.SP
+File: x86_Microsoft.VC90.MFC_1fc8b3b9a1e18e3b_9.0.30729.1_x-ww_405b0943.cat, Directory: payload_ul.30729.01.Microsoft_VC90_MFC_x86.SP
+File: x86_Microsoft.VC90.MFCLOC_1fc8b3b9a1e18e3b_9.0.30729.1_x-ww_b0db7d03.cat, Directory: payload_ul.30729.01.Microsoft_VC90_MFCLOC_x86.SP
+File: 9.0.30729.1.cat, Directory: payload_ul.30729.01.policy_9_0_Microsoft_VC90_ATL_x86.SP
+File: 9.0.30729.1.cat, Directory: payload_ul.30729.01.policy_9_0_Microsoft_VC90_CRT_x86.SP
+File: 9.0.30729.1.cat, Directory: payload_ul.30729.01.policy_9_0_Microsoft_VC90_MFC_x86.SP
+File: 9.0.30729.1.cat, Directory: payload_ul.30729.01.policy_9_0_Microsoft_VC90_MFCLOC_x86.SP
+File: x86_Microsoft.VC90.OpenMP_1fc8b3b9a1e18e3b_9.0.21022.8_x-ww_ecc42bd1.manifest, Directory: payload_ul.21022.08.Microsoft_VC90_OpenMP_x86.RTM
+File: x86_Microsoft.VC90.ATL_1fc8b3b9a1e18e3b_9.0.30729.1_x-ww_d01483b2.manifest, Directory: payload_ul.30729.01.Microsoft_VC90_ATL_x86.SP
+File: x86_Microsoft.VC90.CRT_1fc8b3b9a1e18e3b_9.0.30729.1_x-ww_6f74963e.manifest, Directory: payload_ul.30729.01.Microsoft_VC90_CRT_x86.SP
+File: x86_Microsoft.VC90.MFC_1fc8b3b9a1e18e3b_9.0.30729.1_x-ww_405b0943.manifest, Directory: payload_ul.30729.01.Microsoft_VC90_MFC_x86.SP
+File: x86_Microsoft.VC90.MFCLOC_1fc8b3b9a1e18e3b_9.0.30729.1_x-ww_b0db7d03.manifest, Directory: payload_ul.30729.01.Microsoft_VC90_MFCLOC_x86.SP
+File: mfc90.dll, Directory: payload_ul.30729.01.Microsoft_VC90_MFC_x86.SP
+File: mfc90chs.dll, Directory: payload_ul.30729.01.Microsoft_VC90_MFCLOC_x86.SP
+File: mfc90cht.dll, Directory: payload_ul.30729.01.Microsoft_VC90_MFCLOC_x86.SP
+File: mfc90deu.dll, Directory: payload_ul.30729.01.Microsoft_VC90_MFCLOC_x86.SP
+File: mfc90enu.dll, Directory: payload_ul.30729.01.Microsoft_VC90_MFCLOC_x86.SP
+File: mfc90esn.dll, Directory: payload_ul.30729.01.Microsoft_VC90_MFCLOC_x86.SP
+File: mfc90esp.dll, Directory: payload_ul.30729.01.Microsoft_VC90_MFCLOC_x86.SP
+File: mfc90fra.dll, Directory: payload_ul.30729.01.Microsoft_VC90_MFCLOC_x86.SP
+File: mfc90ita.dll, Directory: payload_ul.30729.01.Microsoft_VC90_MFCLOC_x86.SP
+File: mfc90jpn.dll, Directory: payload_ul.30729.01.Microsoft_VC90_MFCLOC_x86.SP
+File: mfc90kor.dll, Directory: payload_ul.30729.01.Microsoft_VC90_MFCLOC_x86.SP
+File: mfc90rus.dll, Directory: payload_ul.30729.01.Microsoft_VC90_MFCLOC_x86.SP
+File: mfc90u.dll, Directory: payload_ul.30729.01.Microsoft_VC90_MFC_x86.SP
+File: mfcm90.dll, Directory: payload_ul.30729.01.Microsoft_VC90_MFC_x86.SP
+File: mfcm90u.dll, Directory: payload_ul.30729.01.Microsoft_VC90_MFC_x86.SP
+File: msvcm90.dll, Directory: payload_ul.30729.01.Microsoft_VC90_CRT_x86.SP
+File: msvcp90.dll, Directory: payload_ul.30729.01.Microsoft_VC90_CRT_x86.SP
+File: msvcr90.dll, Directory: payload_ul.30729.01.Microsoft_VC90_CRT_x86.SP
+File: 9.0.21022.8.policy, Directory: payload_ul.21022.08.policy_9_0_Microsoft_VC90_OpenMP_x86.RTM
+File: 9.0.30729.1.policy, Directory: payload_ul.30729.01.policy_9_0_Microsoft_VC90_ATL_x86.SP
+File: 9.0.30729.1.policy, Directory: payload_ul.30729.01.policy_9_0_Microsoft_VC90_CRT_x86.SP
+File: 9.0.30729.1.policy, Directory: payload_ul.30729.01.policy_9_0_Microsoft_VC90_MFC_x86.SP
+File: 9.0.30729.1.policy, Directory: payload_ul.30729.01.policy_9_0_Microsoft_VC90_MFCLOC_x86.SP
+File: vcomp90.dll, Directory: payload_ul.21022.08.Microsoft_VC90_OpenMP_x86.RTM
+File: vcomp90.dll, Directory: payload.21022.08.Microsoft_VC90_OpenMP_x86.RTM
+Aktion 4:53:16: RemoveFolders. Removing folders
+Aktion 4:53:16: CreateFolders. Creating folders
+Aktion 4:53:16: MoveFiles. Moving files
+Aktion 4:53:16: InstallFiles. Copying new files
+File: atl90.dll,  Directory: payload.30729.01.Microsoft_VC90_ATL_x86.SP,  Size: 161784
+File: x86_Microsoft.VC90.OpenMP_1fc8b3b9a1e18e3b_9.0.21022.8_x-ww_ecc42bd1.cat,  Directory: WinSxsManifests.21022.08.Microsoft_VC90_OpenMP_x86.RTM,  Size: 10749
+File: 9.0.21022.8.cat,  Directory: policydir.21022.08.policy_9_0_Microsoft_VC90_OpenMP_x86.RTM,  Size: 10797
+File: x86_Microsoft.VC90.ATL_1fc8b3b9a1e18e3b_9.0.30729.1_x-ww_d01483b2.cat,  Directory: WinSxsManifests.30729.01.Microsoft_VC90_ATL_x86.SP,  Size: 9749
+File: x86_Microsoft.VC90.CRT_1fc8b3b9a1e18e3b_9.0.30729.1_x-ww_6f74963e.cat,  Directory: WinSxsManifests.30729.01.Microsoft_VC90_CRT_x86.SP,  Size: 9749
+File: x86_Microsoft.VC90.MFC_1fc8b3b9a1e18e3b_9.0.30729.1_x-ww_405b0943.cat,  Directory: WinSxsManifests.30729.01.Microsoft_VC90_MFC_x86.SP,  Size: 9749
+File: x86_Microsoft.VC90.MFCLOC_1fc8b3b9a1e18e3b_9.0.30729.1_x-ww_b0db7d03.cat,  Directory: WinSxsManifests.30729.01.Microsoft_VC90_MFCLOC_x86.SP,  Size: 9762
+File: 9.0.30729.1.cat,  Directory: policydir.30729.01.policy_9_0_Microsoft_VC90_ATL_x86.SP,  Size: 9798
+File: 9.0.30729.1.cat,  Directory: policydir.30729.01.policy_9_0_Microsoft_VC90_CRT_x86.SP,  Size: 9798
+File: 9.0.30729.1.cat,  Directory: policydir.30729.01.policy_9_0_Microsoft_VC90_MFC_x86.SP,  Size: 9798
+File: 9.0.30729.1.cat,  Directory: policydir.30729.01.policy_9_0_Microsoft_VC90_MFCLOC_x86.SP,  Size: 9810
+File: install.res.1031.dll,  Directory: CSetupMM_URT_x86.3643236F_FC70_11D3_A536_0090278A1BB8,  Size: 96272
+File: eula.1031.txt,  Directory: DR_54322.3643236F_FC70_11D3_A536_0090278A1BB8,  Size: 15460
+File: globdata.ini,  Directory: DR_54322.3643236F_FC70_11D3_A536_0090278A1BB8,  Size: 1110
+File: install.exe,  Directory: CSetupMM_URT_x86.3643236F_FC70_11D3_A536_0090278A1BB8,  Size: 562688
+File: install.ini,  Directory: DR_54322.3643236F_FC70_11D3_A536_0090278A1BB8,  Size: 854
+File: VC_RED.MSI,  Directory: DR_54322.3643236F_FC70_11D3_A536_0090278A1BB8,  Size: 0
+File: vcredist.bmp,  Directory: DR_54322.3643236F_FC70_11D3_A536_0090278A1BB8,  Size: 5686
+File: VC_RED.cab,  Directory: DR_54322.3643236F_FC70_11D3_A536_0090278A1BB8,  Size: 0
+File: msdia90.dll,  Directory: VCMsM.3643236F_FC70_11D3_A536_0090278A1BB8,  Size: 669184
+File: x86_Microsoft.VC90.OpenMP_1fc8b3b9a1e18e3b_9.0.21022.8_x-ww_ecc42bd1.manifest,  Directory: WinSxsManifests.21022.08.Microsoft_VC90_OpenMP_x86.RTM,  Size: 858
+File: x86_Microsoft.VC90.ATL_1fc8b3b9a1e18e3b_9.0.30729.1_x-ww_d01483b2.manifest,  Directory: WinSxsManifests.30729.01.Microsoft_VC90_ATL_x86.SP,  Size: 853
+File: x86_Microsoft.VC90.CRT_1fc8b3b9a1e18e3b_9.0.30729.1_x-ww_6f74963e.manifest,  Directory: WinSxsManifests.30729.01.Microsoft_VC90_CRT_x86.SP,  Size: 1857
+File: x86_Microsoft.VC90.MFC_1fc8b3b9a1e18e3b_9.0.30729.1_x-ww_405b0943.manifest,  Directory: WinSxsManifests.30729.01.Microsoft_VC90_MFC_x86.SP,  Size: 2354
+File: x86_Microsoft.VC90.MFCLOC_1fc8b3b9a1e18e3b_9.0.30729.1_x-ww_b0db7d03.manifest,  Directory: WinSxsManifests.30729.01.Microsoft_VC90_MFCLOC_x86.SP,  Size: 5879
+File: mfc90.dll,  Directory: payload.30729.01.Microsoft_VC90_MFC_x86.SP,  Size: 3768312
+File: mfc90chs.dll,  Directory: payload.30729.01.Microsoft_VC90_MFCLOC_x86.SP,  Size: 38912
+File: mfc90cht.dll,  Directory: payload.30729.01.Microsoft_VC90_MFCLOC_x86.SP,  Size: 39936
+File: mfc90deu.dll,  Directory: payload.30729.01.Microsoft_VC90_MFCLOC_x86.SP,  Size: 66560
+File: mfc90enu.dll,  Directory: payload.30729.01.Microsoft_VC90_MFCLOC_x86.SP,  Size: 56832
+File: mfc90esn.dll,  Directory: payload.30729.01.Microsoft_VC90_MFCLOC_x86.SP,  Size: 65024
+File: mfc90esp.dll,  Directory: payload.30729.01.Microsoft_VC90_MFCLOC_x86.SP,  Size: 65024
+File: mfc90fra.dll,  Directory: payload.30729.01.Microsoft_VC90_MFCLOC_x86.SP,  Size: 66048
+File: mfc90ita.dll,  Directory: payload.30729.01.Microsoft_VC90_MFCLOC_x86.SP,  Size: 64512
+File: mfc90jpn.dll,  Directory: payload.30729.01.Microsoft_VC90_MFCLOC_x86.SP,  Size: 46592
+File: mfc90kor.dll,  Directory: payload.30729.01.Microsoft_VC90_MFCLOC_x86.SP,  Size: 46080
+File: mfc90rus.dll,  Directory: payload.30729.01.Microsoft_VC90_MFCLOC_x86.SP,  Size: 62976
+File: mfc90u.dll,  Directory: payload.30729.01.Microsoft_VC90_MFC_x86.SP,  Size: 3783672
+File: mfcm90.dll,  Directory: payload.30729.01.Microsoft_VC90_MFC_x86.SP,  Size: 59904
+File: mfcm90u.dll,  Directory: payload.30729.01.Microsoft_VC90_MFC_x86.SP,  Size: 59904
+File: msvcm90.dll,  Directory: payload.30729.01.Microsoft_VC90_CRT_x86.SP,  Size: 225280
+File: msvcp90.dll,  Directory: payload.30729.01.Microsoft_VC90_CRT_x86.SP,  Size: 572928
+File: msvcr90.dll,  Directory: payload.30729.01.Microsoft_VC90_CRT_x86.SP,  Size: 655872
+File: atl90.dll,  Directory: SystemFolder.30729.01.Microsoft_VC90_ATL_x86.SP,  Size: 161784
+File: mfc90.dll,  Directory: SystemFolder.30729.01.Microsoft_VC90_MFC_x86.SP,  Size: 3768312
+File: mfc90chs.dll,  Directory: SystemFolder.30729.01.Microsoft_VC90_MFCLOC_x86.SP,  Size: 38912
+File: mfc90cht.dll,  Directory: SystemFolder.30729.01.Microsoft_VC90_MFCLOC_x86.SP,  Size: 39936
+File: mfc90deu.dll,  Directory: SystemFolder.30729.01.Microsoft_VC90_MFCLOC_x86.SP,  Size: 66560
+File: mfc90enu.dll,  Directory: SystemFolder.30729.01.Microsoft_VC90_MFCLOC_x86.SP,  Size: 56832
+File: mfc90esn.dll,  Directory: SystemFolder.30729.01.Microsoft_VC90_MFCLOC_x86.SP,  Size: 65024
+File: mfc90esp.dll,  Directory: SystemFolder.30729.01.Microsoft_VC90_MFCLOC_x86.SP,  Size: 65024
+File: mfc90fra.dll,  Directory: SystemFolder.30729.01.Microsoft_VC90_MFCLOC_x86.SP,  Size: 66048
+File: mfc90ita.dll,  Directory: SystemFolder.30729.01.Microsoft_VC90_MFCLOC_x86.SP,  Size: 64512
+File: mfc90jpn.dll,  Directory: SystemFolder.30729.01.Microsoft_VC90_MFCLOC_x86.SP,  Size: 46592
+File: mfc90kor.dll,  Directory: SystemFolder.30729.01.Microsoft_VC90_MFCLOC_x86.SP,  Size: 46080
+File: mfc90rus.dll,  Directory: SystemFolder.30729.01.Microsoft_VC90_MFCLOC_x86.SP,  Size: 62976
+File: mfc90u.dll,  Directory: SystemFolder.30729.01.Microsoft_VC90_MFC_x86.SP,  Size: 3783672
+File: mfcm90.dll,  Directory: SystemFolder.30729.01.Microsoft_VC90_MFC_x86.SP,  Size: 59904
+File: mfcm90u.dll,  Directory: SystemFolder.30729.01.Microsoft_VC90_MFC_x86.SP,  Size: 59904
+File: msvcm90.dll,  Directory: SystemFolder.30729.01.Microsoft_VC90_CRT_x86.SP,  Size: 225280
+File: msvcp90.dll,  Directory: SystemFolder.30729.01.Microsoft_VC90_CRT_x86.SP,  Size: 572928
+File: msvcr90.dll,  Directory: SystemFolder.30729.01.Microsoft_VC90_CRT_x86.SP,  Size: 655872
+File: vcomp90.dll,  Directory: SystemFolder.21022.08.Microsoft_VC90_OpenMP_x86.RTM,  Size: 54272
+File: 9.0.21022.8.policy,  Directory: policydir.21022.08.policy_9_0_Microsoft_VC90_OpenMP_x86.RTM,  Size: 668
+File: 9.0.30729.1.policy,  Directory: policydir.30729.01.policy_9_0_Microsoft_VC90_ATL_x86.SP,  Size: 752
+File: 9.0.30729.1.policy,  Directory: policydir.30729.01.policy_9_0_Microsoft_VC90_CRT_x86.SP,  Size: 752
+File: 9.0.30729.1.policy,  Directory: policydir.30729.01.policy_9_0_Microsoft_VC90_MFC_x86.SP,  Size: 752
+File: 9.0.30729.1.policy,  Directory: policydir.30729.01.policy_9_0_Microsoft_VC90_MFCLOC_x86.SP,  Size: 758
+File: atl90.dll,  Directory: payload_ul.30729.01.Microsoft_VC90_ATL_x86.SP,  Size: 161784
+File: x86_Microsoft.VC90.OpenMP_1fc8b3b9a1e18e3b_9.0.21022.8_x-ww_ecc42bd1.cat,  Directory: payload_ul.21022.08.Microsoft_VC90_OpenMP_x86.RTM,  Size: 10749
+File: 9.0.21022.8.cat,  Directory: payload_ul.21022.08.policy_9_0_Microsoft_VC90_OpenMP_x86.RTM,  Size: 10797
+File: x86_Microsoft.VC90.ATL_1fc8b3b9a1e18e3b_9.0.30729.1_x-ww_d01483b2.cat,  Directory: payload_ul.30729.01.Microsoft_VC90_ATL_x86.SP,  Size: 9749
+File: x86_Microsoft.VC90.CRT_1fc8b3b9a1e18e3b_9.0.30729.1_x-ww_6f74963e.cat,  Directory: payload_ul.30729.01.Microsoft_VC90_CRT_x86.SP,  Size: 9749
+File: x86_Microsoft.VC90.MFC_1fc8b3b9a1e18e3b_9.0.30729.1_x-ww_405b0943.cat,  Directory: payload_ul.30729.01.Microsoft_VC90_MFC_x86.SP,  Size: 9749
+File: x86_Microsoft.VC90.MFCLOC_1fc8b3b9a1e18e3b_9.0.30729.1_x-ww_b0db7d03.cat,  Directory: payload_ul.30729.01.Microsoft_VC90_MFCLOC_x86.SP,  Size: 9762
+File: 9.0.30729.1.cat,  Directory: payload_ul.30729.01.policy_9_0_Microsoft_VC90_ATL_x86.SP,  Size: 9798
+File: 9.0.30729.1.cat,  Directory: payload_ul.30729.01.policy_9_0_Microsoft_VC90_CRT_x86.SP,  Size: 9798
+File: 9.0.30729.1.cat,  Directory: payload_ul.30729.01.policy_9_0_Microsoft_VC90_MFC_x86.SP,  Size: 9798
+File: 9.0.30729.1.cat,  Directory: payload_ul.30729.01.policy_9_0_Microsoft_VC90_MFCLOC_x86.SP,  Size: 9810
+File: x86_Microsoft.VC90.OpenMP_1fc8b3b9a1e18e3b_9.0.21022.8_x-ww_ecc42bd1.manifest,  Directory: payload_ul.21022.08.Microsoft_VC90_OpenMP_x86.RTM,  Size: 858
+File: x86_Microsoft.VC90.ATL_1fc8b3b9a1e18e3b_9.0.30729.1_x-ww_d01483b2.manifest,  Directory: payload_ul.30729.01.Microsoft_VC90_ATL_x86.SP,  Size: 853
+File: x86_Microsoft.VC90.CRT_1fc8b3b9a1e18e3b_9.0.30729.1_x-ww_6f74963e.manifest,  Directory: payload_ul.30729.01.Microsoft_VC90_CRT_x86.SP,  Size: 1857
+File: x86_Microsoft.VC90.MFC_1fc8b3b9a1e18e3b_9.0.30729.1_x-ww_405b0943.manifest,  Directory: payload_ul.30729.01.Microsoft_VC90_MFC_x86.SP,  Size: 2354
+File: x86_Microsoft.VC90.MFCLOC_1fc8b3b9a1e18e3b_9.0.30729.1_x-ww_b0db7d03.manifest,  Directory: payload_ul.30729.01.Microsoft_VC90_MFCLOC_x86.SP,  Size: 5879
+File: mfc90.dll,  Directory: payload_ul.30729.01.Microsoft_VC90_MFC_x86.SP,  Size: 3768312
+File: mfc90chs.dll,  Directory: payload_ul.30729.01.Microsoft_VC90_MFCLOC_x86.SP,  Size: 38912
+File: mfc90cht.dll,  Directory: payload_ul.30729.01.Microsoft_VC90_MFCLOC_x86.SP,  Size: 39936
+File: mfc90deu.dll,  Directory: payload_ul.30729.01.Microsoft_VC90_MFCLOC_x86.SP,  Size: 66560
+File: mfc90enu.dll,  Directory: payload_ul.30729.01.Microsoft_VC90_MFCLOC_x86.SP,  Size: 56832
+File: mfc90esn.dll,  Directory: payload_ul.30729.01.Microsoft_VC90_MFCLOC_x86.SP,  Size: 65024
+File: mfc90esp.dll,  Directory: payload_ul.30729.01.Microsoft_VC90_MFCLOC_x86.SP,  Size: 65024
+File: mfc90fra.dll,  Directory: payload_ul.30729.01.Microsoft_VC90_MFCLOC_x86.SP,  Size: 66048
+File: mfc90ita.dll,  Directory: payload_ul.30729.01.Microsoft_VC90_MFCLOC_x86.SP,  Size: 64512
+File: mfc90jpn.dll,  Directory: payload_ul.30729.01.Microsoft_VC90_MFCLOC_x86.SP,  Size: 46592
+File: mfc90kor.dll,  Directory: payload_ul.30729.01.Microsoft_VC90_MFCLOC_x86.SP,  Size: 46080
+File: mfc90rus.dll,  Directory: payload_ul.30729.01.Microsoft_VC90_MFCLOC_x86.SP,  Size: 62976
+File: mfc90u.dll,  Directory: payload_ul.30729.01.Microsoft_VC90_MFC_x86.SP,  Size: 3783672
+File: mfcm90.dll,  Directory: payload_ul.30729.01.Microsoft_VC90_MFC_x86.SP,  Size: 59904
+File: mfcm90u.dll,  Directory: payload_ul.30729.01.Microsoft_VC90_MFC_x86.SP,  Size: 59904
+File: msvcm90.dll,  Directory: payload_ul.30729.01.Microsoft_VC90_CRT_x86.SP,  Size: 225280
+File: msvcp90.dll,  Directory: payload_ul.30729.01.Microsoft_VC90_CRT_x86.SP,  Size: 572928
+File: msvcr90.dll,  Directory: payload_ul.30729.01.Microsoft_VC90_CRT_x86.SP,  Size: 655872
+File: 9.0.21022.8.policy,  Directory: payload_ul.21022.08.policy_9_0_Microsoft_VC90_OpenMP_x86.RTM,  Size: 668
+File: 9.0.30729.1.policy,  Directory: payload_ul.30729.01.policy_9_0_Microsoft_VC90_ATL_x86.SP,  Size: 752
+File: 9.0.30729.1.policy,  Directory: payload_ul.30729.01.policy_9_0_Microsoft_VC90_CRT_x86.SP,  Size: 752
+File: 9.0.30729.1.policy,  Directory: payload_ul.30729.01.policy_9_0_Microsoft_VC90_MFC_x86.SP,  Size: 752
+File: 9.0.30729.1.policy,  Directory: payload_ul.30729.01.policy_9_0_Microsoft_VC90_MFCLOC_x86.SP,  Size: 758
+File: vcomp90.dll,  Directory: payload_ul.21022.08.Microsoft_VC90_OpenMP_x86.RTM,  Size: 54272
+File: vcomp90.dll,  Directory: payload.21022.08.Microsoft_VC90_OpenMP_x86.RTM,  Size: 54272
+Aktion 4:53:16: DuplicateFiles. Creating duplicate files
+Aktion 4:53:16: RegisterClassInfo. Registering Class servers
+Aktion 4:53:16: RegisterMIMEInfo. Registering MIME info
+Aktion 4:53:16: RegisterTypeLibraries. Registering type libraries
+Aktion 4:53:16: WriteRegistryValues. Writing system registry values
+Key: HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\DevDiv\VC\Servicing\9.0, Name: SP, Value: 
+Key: HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\DevDiv\VC\Servicing\9.0\RED\1031, Name: Install, Value: 
+Key: HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\DevDiv\VC\Servicing\9.0, Name: SPIndex, Value: 
+Key: HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\DevDiv\VC\Servicing\9.0\RED\1031, Name: InstallerType, Value: MSI
+Key: HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\DevDiv\VC\Servicing\9.0\RED\1031, Name: SP, Value: 
+Key: HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\DevDiv\VC\Servicing\9.0\RED\1031, Name: SPIndex, Value: 
+Key: HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\DevDiv\VC\Servicing\9.0\RED\1031, Name: SPName, Value: SP1
+Aktion 4:53:16: WriteIniValues. Writing INI files values
+Aktion 4:53:16: WriteEnvironmentStrings. Updating environment strings
+Aktion 4:53:16: RegisterFonts. Registering fonts
+Aktion 4:53:16: InstallODBC. Installing ODBC components
+Aktion 4:53:16: SelfRegModules. Registering modules
+Aktion 4:53:16: InstallServices. Installing new services
+Aktion 4:53:16: StartServices. Starting services
+Aktion 4:53:16: RegisterUser. Registering user
+1:  
+Aktion 4:53:16: RegisterProduct. Registering product
+1: {6AFCA4E1-9B78-3640-8F72-A7BF33448200} 
+Aktion 4:53:16: PublishComponents. Publishing Qualified Components
+Aktion 4:53:16: MsiPublishAssemblies. Publishing assembly information
+Application Context:, Assembly Name:Microsoft.VC90.ATL,version="9.0.30729.1",publicKeyToken="1fc8b3b9a1e18e3b",processorArchitecture="x86",type="win32"
+Application Context:, Assembly Name:policy.9.0.Microsoft.VC90.ATL,version="9.0.30729.1",publicKeyToken="1fc8b3b9a1e18e3b",processorArchitecture="x86",type="win32-policy"
+Application Context:, Assembly Name:Microsoft.VC90.CRT,version="9.0.30729.1",publicKeyToken="1fc8b3b9a1e18e3b",processorArchitecture="x86",type="win32"
+Application Context:, Assembly Name:policy.9.0.Microsoft.VC90.CRT,version="9.0.30729.1",publicKeyToken="1fc8b3b9a1e18e3b",processorArchitecture="x86",type="win32-policy"
+Application Context:, Assembly Name:Microsoft.VC90.MFC,version="9.0.30729.1",publicKeyToken="1fc8b3b9a1e18e3b",processorArchitecture="x86",type="win32"
+Application Context:, Assembly Name:policy.9.0.Microsoft.VC90.MFC,version="9.0.30729.1",publicKeyToken="1fc8b3b9a1e18e3b",processorArchitecture="x86",type="win32-policy"
+Application Context:, Assembly Name:Microsoft.VC90.MFCLOC,version="9.0.30729.1",publicKeyToken="1fc8b3b9a1e18e3b",processorArchitecture="x86",type="win32"
+Application Context:, Assembly Name:policy.9.0.Microsoft.VC90.MFCLOC,version="9.0.30729.1",publicKeyToken="1fc8b3b9a1e18e3b",processorArchitecture="x86",type="win32-policy"
+Application Context:, Assembly Name:Microsoft.VC90.OpenMP,version="9.0.21022.8",publicKeyToken="1fc8b3b9a1e18e3b",processorArchitecture="x86",type="win32"
+Application Context:, Assembly Name:policy.9.0.Microsoft.VC90.OpenMP,version="9.0.21022.8",publicKeyToken="1fc8b3b9a1e18e3b",processorArchitecture="x86",type="win32-policy"
+Aktion 4:53:16: PublishFeatures. Publishing Product Features
+Feature: VC_RED_deu_x86_net_SETUP
+Feature: Servicing_Key
+Feature: FT_VC_Redist_ATL_x86
+Feature: FT_VC_Redist_CRT_x86
+Feature: FT_VC_Redist_MFC_x86
+Feature: FT_VC_Redist_MFCLOC_x86
+Feature: FT_VC_Redist_OpenMP_x86
+Feature: VC_Redist_12222_x86_deu
+Aktion 4:53:16: PublishProduct. Publishing product information
+1: {6AFCA4E1-9B78-3640-8F72-A7BF33448200} 
+Aktion 4:53:16: CreateShortcuts. Creating shortcuts
+1: Microsoft Visual C++ 2008 Redistributable - x86 9.0.30729 2: {6AFCA4E1-9B78-3640-8F72-A7BF33448200} 3: 1 
+1: 2 2: 0 
+1: 2 2: 1 

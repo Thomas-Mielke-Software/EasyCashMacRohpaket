@@ -1,0 +1,390 @@
+#!/usr/bin/perl
+# (c) Copyright 2002-2012. CodeWeavers, Inc.
+use warnings;
+use strict;
+
+my $builtin_productid="easyct";
+
+
+# Portable which(1) implementation
+sub cxwhich($$;$)
+{
+    my ($dirs, $app, $noexec)=@_;
+    if ($app =~ /^\//)
+    {
+        return $app if ((-x $app or $noexec) and -f $app);
+    }
+    elsif ($app =~ /\//)
+    {
+        require Cwd;
+        my $path=Cwd::cwd() . "/$app";
+        return $path if ((-x $path or $noexec) and -f $path);
+    }
+    else
+    {
+        foreach my $dir (split /:/, $dirs)
+        {
+            return "$dir/$app" if ($dir ne "" and (-x "$dir/$app" or $noexec) and -f "$dir/$app");
+        }
+    }
+    return undef;
+}
+
+# Fast dirname() implementation
+sub _cxdirname($)
+{
+    my ($path)=@_;
+    return undef if (!defined $path);
+    return "." if ($path !~ s!/+[^/]+/*$!!s);
+    return "/" if ($path eq "");
+    return $path;
+}
+
+# Locate where CrossOver is installed by looking for the directory
+# where the cxmenu script is located, unwinding symlinks on the way
+sub locate_cx_root(;$)
+{
+    my ($fallback)=@_;
+    my $argv0=cxwhich($ENV{PATH},$0);
+    $argv0=$0 if (!defined $argv0);
+    if ($argv0 !~ m+^/+)
+    {
+        require Cwd;
+        $argv0=Cwd::cwd() . "/$argv0";
+    }
+    my $dir=_cxdirname($argv0);
+    my $bindir=$dir;
+    $bindir =~ s%/lib$%/bin%;
+    while (!-x "$bindir/cxmenu" or !-f "$bindir/cxmenu")
+    {
+        last if (!-l $argv0);
+        $argv0=readlink($argv0);
+        $argv0="$dir/$argv0" if ($argv0 !~ m+^/+);
+        $dir=_cxdirname($argv0);
+        $bindir=$dir;
+        $bindir =~ s%/lib$%/bin%;
+    }
+    $bindir =~ s%/(?:\./)+%/%g;
+    $bindir =~ s%/\.$%%;
+    $ENV{CX_ROOT}=_cxdirname($bindir);
+    if ((!-x "$ENV{CX_ROOT}/bin/cxmenu" or !-f "$ENV{CX_ROOT}/bin/cxmenu") and
+        $fallback)
+    {
+        $ENV{CX_ROOT}=$fallback;
+    }
+    if (!-x "$ENV{CX_ROOT}/bin/cxmenu" or !-f "$ENV{CX_ROOT}/bin/cxmenu")
+    {
+        my $name0=$0;
+        $name0 =~ s+^.*/++;
+        print STDERR "$name0:error: could not find CrossOver in '$ENV{CX_ROOT}'\n";
+        exit 1;
+    }
+    return $ENV{CX_ROOT};
+}
+
+BEGIN {
+    unshift @INC, locate_cx_root() . "/lib/perl";
+}
+use CXLog;
+use CXUtils;
+
+my $productid=CXUtils::get_product_id();
+my $productname=CXUtils::get_product_name();
+
+
+# Process command-line options
+my $opt_verbose;
+my $opt_force;
+my $opt_help;
+require CXOpts;
+my $cxopts=CXOpts->new();
+$cxopts->add_options(["force"       => \$opt_force,
+                      "verbose!"    => \$opt_verbose,
+                      "?|h|help"    => \$opt_help
+                     ]);
+my $err=$cxopts->parse();
+CXLog::fdopen(2) if ($opt_verbose);
+
+
+# Validate the command line options
+my $usage;
+if ($err)
+{
+    cxerr("$err\n");
+    $usage=2;
+}
+elsif ($opt_help)
+{
+    $usage=0;
+}
+if (defined $usage)
+{
+    my $name0=cxname0();
+    if ($usage)
+    {
+        cxerr("try '$name0 --help' for more information\n");
+        exit $usage;
+    }
+    print "Usage: $name0 [--force] [--verbose] [--help]\n";
+
+    print "\n";
+    print "Uninstalls CrossOver or removes its files from your account.\n";
+
+    print "\n";
+    print "Options:\n";
+    print "  --force      If set, no confirmation is asked before uninstalling CrossOver\n";
+    print "  --verbose    Print more information about what is going on\n";
+    print "  --help, -h   Shows this help message\n";
+    exit 0;
+}
+
+
+# Determine what mode we should be operating in
+my $pre_msg;
+my $mode;
+my $post_msg;
+my $err_msg;
+my $button_list;
+my $btn_uninstall_user=cxgettext("Delete Bottles");
+my $btn_uninstall=cxgettext("Uninstall");
+my $btn_cancel=cxgettext("Cancel");
+if (-w $ENV{CX_ROOT})
+{
+    $mode="uninstall";
+    if ($> == 0)
+    {
+        $pre_msg=cxgettext("This will remove \%s from your system.\n", $productname);
+        $pre_msg=cxgettext("\%1\$sBefore uninstalling \%2\$s, make sure to uninstall it from each user's environment. To do so, run '\%3\$s' in their account.", $pre_msg, $productname, "$ENV{CX_ROOT}/bin/cxuninstall");
+    }
+    else
+    {
+        # Single user
+        $pre_msg=cxgettext("This will remove \%s from your system.", $productname);
+    }
+    $post_msg=cxgettext("\%s has been removed.", $productname);
+    $err_msg=cxgettext("An error occurred while uninstalling \%s.", $productname);
+    $button_list="$btn_cancel:102,$btn_uninstall:0";
+}
+else
+{
+    $mode="user";
+    $pre_msg=cxgettext("This operation will remove all files created by \%s in your account.", $productname);
+    $post_msg=cxgettext("\%1\$s has been removed from your account.\nTo fully uninstall it, run '\%2\$s' as root.",
+        $productname, "$ENV{CX_ROOT}/bin/cxuninstall");
+    $err_msg=cxgettext("An error occurred while removing the \%s files.", $productname);
+    $button_list="$btn_cancel:102,$btn_uninstall_user:0";
+}
+
+if (!$opt_force)
+{
+    # Warn the user
+    my $rc=cxmessage(
+        "-title", "\%s Uninstall", "-title", "$productname",
+        "-buttons", $button_list,
+        "-default", $btn_cancel,
+        "-image", "cxuninstall",
+        "-wm-class", "cxuninstall",
+        "\%s", $pre_msg);
+    if ($rc == 0)
+    {
+        $ENV{CX_PURGE}="all";
+    }
+    elsif ($rc == 256*101)
+    {
+        $ENV{CX_PURGE}="desktopdata";
+    }
+    else
+    {
+        if ($rc != 256*102 and $rc != 256*252)
+        {
+            # The user did not hit Cancel or close the window
+            my $name0=cxname0();
+            cxwarn("cxmessage died. You may want to try '$name0 --help' for alternatives\n");
+        }
+        exit 1;
+    }
+}
+elsif (!defined $ENV{CX_PURGE})
+{
+    $ENV{CX_PURGE}=($button_list =~ /:101/ ? "desktopdata" : "all");
+}
+
+
+# Uninstall
+sub stop_applications($)
+{
+    my ($scopes)=@_;
+
+    my ($failed, $wait_pid);
+    foreach my $scope (@$scopes)
+    {
+        my $path=($scope eq "private" ? $ENV{CX_BOTTLE_PATH} : $ENV{CX_MANAGED_BOTTLE_PATH});
+        foreach my $dir (split /:+/, $path)
+        {
+            next if ($dir eq "");
+
+            my $dh;
+            next if (!opendir($dh, $dir));
+            foreach my $dentry (readdir $dh)
+            {
+                next if ($dentry =~ /^(?:\.\.?|default)$/);
+                next if (!-f "$dir/$dentry/cxbottle.conf");
+
+                if (cxsystem("$ENV{CX_ROOT}/bin/wine", "--bottle", $dentry, "--scope", $scope, "--no-update", "--ux-app", "wineserver", "-k0") == 0)
+                {
+                    # Ask the running Windows applications to shut down
+                    $wait_pid=cxwait(0, "--no-focus", "Shutting down the Windows applications.");
+                    $failed=cxsystem("$ENV{CX_ROOT}/bin/wine",
+                                     "--bottle", $dentry, "--scope", $scope,
+                                     "--no-update", "--wl-app", "wineboot.exe",
+                                     "--", "--end-session", "--shutdown",
+                                     "--force", "--kill");
+                    last if ($failed);
+                }
+            }
+            closedir($dh);
+        }
+    }
+    kill(15, $wait_pid) if (defined $wait_pid);
+    if ($failed)
+    {
+        cxmessage("Aborting the uninstallation because some Windows applications could not be stopped.\n");
+        return 0;
+    }
+    return 1;
+}
+
+# Uninstall
+sub uninstall($)
+{
+    my ($cxconfig)=@_;
+
+    my $pkginfo=$cxconfig->get("CrossOver", "ProductPackage", "");
+    my ($pkgtype, $pkgname)=split /:/, $pkginfo;
+
+    if (($pkgtype || "mojo") eq "mojo" and
+        -d "$ENV{CX_ROOT}/.mojosetup" and -f "$ENV{CX_ROOT}/.uninstall")
+    {
+        # This is a MojoSetup package
+        cxlog("Starting the MojoSetup uninstaller\n");
+        my $mojo_uninstaller="uninstall-$builtin_productid.sh";
+        if (!rename("$ENV{CX_ROOT}/.uninstall", "$ENV{CX_ROOT}/$mojo_uninstaller"))
+        {
+            cxerr("unable to rename '.uninstall' to '$mojo_uninstaller'\n");
+            return (1, undef, 1);
+        }
+
+        if (CXLog::is_on())
+        {
+            $ENV{MOJOSETUP_LOG}=$ENV{CX_LOG} if (!defined $ENV{MOJOSETUP_LOG});
+            $ENV{MOJOSETUP_LOGLEVEL}="all" if (!defined $ENV{MOJOSETUP_LOGLEVEL});
+        }
+        my $rc=cxsystem("$ENV{CX_ROOT}/$mojo_uninstaller", "--force");
+        if ($rc != 0)
+        {
+            rename("$ENV{CX_ROOT}/$mojo_uninstaller", "$ENV{CX_ROOT}/.uninstall");
+            return (1, undef, 0);
+        }
+        return (0, undef, 0);
+    }
+
+    # The other methods are not interactive
+    my $wait_pid=cxwait(0, "--no-focus", "Uninstalling");
+
+    if ($pkgtype eq "rpm" and $pkgname)
+    {
+        return (cxsystem("rpm", "-e", $pkgname), $wait_pid, 1);
+    }
+
+    if ($pkgtype eq "deb" and $pkgname)
+    {
+        return (cxsystem("dpkg", ($ENV{CX_PURGE} eq "desktopdata" ? "--remove" : "--purge"), $pkgname), $wait_pid, 1);
+    }
+
+    if ($pkgtype eq "sunpkg" and $pkgname)
+    {
+        my $cxpurge="$ENV{CX_ROOT}/cxpurge";
+        my $fh;
+        if (!open($fh, ">", $cxpurge))
+        {
+            cxerr("unable to open '$cxpurge' for writing: $!\n");
+            return (1, $wait_pid, 1);
+        }
+        print $fh "$ENV{CX_PURGE}\n";
+        close($fh);
+        my @cmd=("pkgrm");
+        push @cmd, "-v" if (CXLog::is_on() and !defined CXLog::get_filename());
+        push @cmd, $pkgname;
+        my $rc=cxsystem(@cmd);
+        unlink $cxpurge;
+        return ($rc, $wait_pid, 1);
+    }
+
+    cxerr("unable to determine how to uninstall $productname ($pkginfo)\n");
+    return (1, $wait_pid, 1);
+}
+
+# We also call get_crossover_config() so $CX_(MANAGED_)BOTTLE_PATH is
+# set before we call stop_applications().
+require CXBottle;
+my $cxconfig=CXBottle::get_crossover_config();
+
+my $rc=0;
+my ($wait_pid, $notify);
+if ($mode eq "uninstall")
+{
+    exit 1 if (!stop_applications(["managed", "private"]));
+    ($rc, $wait_pid, $notify)=uninstall($cxconfig);
+}
+else
+{
+    exit 1 if (!stop_applications(["private"]));
+    $wait_pid=cxwait(0, "--no-focus", "Uninstalling");
+    $rc|=cxsystem("$ENV{CX_ROOT}/bin/cxmenu", "--removeall",
+                  "--pattern", "$productid-", "--ignorelist", "");
+    $rc|=cxsystem("$ENV{CX_ROOT}/bin/cxassoc", "--removeall",
+                  "--pattern", "$productid-", "--ignorelist", "");
+    my $dir="$ENV{HOME}/.$productid";
+    if (-d $dir)
+    {
+        cxlog("Deleting the '$dir' directory\n");
+        require File::Path;
+        if (!File::Path::rmtree($dir))
+        {
+            cxerr("unable to delete the '$ENV{HOME}/.$productid' directory\n");
+        }
+    }
+}
+kill(9, $wait_pid) if (defined $wait_pid);
+
+# Our xmessage may be gone now
+my $cxmessage="$ENV{CX_ROOT}/bin/cxmessage";
+$cxmessage=cxwhich($ENV{PATH},"xmessage") if (!-f $cxmessage);
+
+if ($rc != 0)
+{
+    if ($notify and defined $cxmessage)
+    {
+        cxsystem("$cxmessage",
+                 "-title","Uninstall Failed",
+                 "-buttons","OK",
+                 "-default","OK",
+                 $err_msg);
+    }
+    else
+    {
+        cxerr("$err_msg\n");
+    }
+    exit 1;
+}
+
+# Notify of completion and of next step
+if ($notify and defined $cxmessage)
+{
+    cxsystem("$cxmessage",
+             "-title","Uninstall Complete",
+             "-buttons","OK",
+             "-default","OK",
+             $post_msg);
+}
+exit 0;

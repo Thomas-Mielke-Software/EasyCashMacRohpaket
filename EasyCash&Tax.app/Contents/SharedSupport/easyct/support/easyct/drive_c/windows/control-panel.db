@@ -1,0 +1,14 @@
+﻿[appwiz.cpl/0]
+Path=appwiz.cpl
+Name=Add/Remove Programs
+Description=Allows you to install new software, or remove existing software from your computer.
+Icon=C:\windows\ControlPanelDB\appwiz.ico
+[inetcpl.cpl/0]
+Path=inetcpl.cpl
+Name=Internet Settings
+Description=Configure Wine Internet Browser and related settings
+Icon=C:\windows\ControlPanelDB\inetcpl.ico
+[joy.cpl/0]
+Path=joy.cpl
+Name=Game Controllers
+Icon=C:\windows\ControlPanelDB\joy.xpm

@@ -1,0 +1,20 @@
+@# See the Solaris Application Packaging Developer's Guide
+@# http://docs.sun.com/app/docs/doc/806-7008
+@#
+PKG=@package_name@
+NAME=The @bottle@ CrossOver Bottle.
+ARCH=all
+VERSION=@package_version@-@release@
+CATEGORY=application
+DESC=@description@
+VENDOR=CodeWeavers, Inc.
+EMAIL=@packager@
+CLASSES=none
+PKG_SRC_NOVERIFY=@noverify@
+PSTAMP=@date@
+BASEDIR=/opt
+MAXINST=1000
+
+# Runtime variables
+CX_UUID=
+CX_PKGINST=

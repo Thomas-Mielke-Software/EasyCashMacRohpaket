@@ -1,0 +1,228 @@
+#!/usr/bin/perl
+# (c) Copyright 2008, 2010. CodeWeavers, Inc.
+use warnings;
+use strict;
+
+# Portable which(1) implementation
+sub cxwhich($$;$)
+{
+    my ($dirs, $app, $noexec)=@_;
+    if ($app =~ /^\//)
+    {
+        return $app if ((-x $app or $noexec) and -f $app);
+    }
+    elsif ($app =~ /\//)
+    {
+        require Cwd;
+        my $path=Cwd::cwd() . "/$app";
+        return $path if ((-x $path or $noexec) and -f $path);
+    }
+    else
+    {
+        foreach my $dir (split /:/, $dirs)
+        {
+            return "$dir/$app" if ($dir ne "" and (-x "$dir/$app" or $noexec) and -f "$dir/$app");
+        }
+    }
+    return undef;
+}
+
+# Fast dirname() implementation
+sub _cxdirname($)
+{
+    my ($path)=@_;
+    return undef if (!defined $path);
+    return "." if ($path !~ s!/+[^/]+/*$!!s);
+    return "/" if ($path eq "");
+    return $path;
+}
+
+# Locate where CrossOver is installed by looking for the directory
+# where the cxmenu script is located, unwinding symlinks on the way
+sub locate_cx_root(;$)
+{
+    my ($fallback)=@_;
+    my $argv0=cxwhich($ENV{PATH},$0);
+    $argv0=$0 if (!defined $argv0);
+    if ($argv0 !~ m+^/+)
+    {
+        require Cwd;
+        $argv0=Cwd::cwd() . "/$argv0";
+    }
+    my $dir=_cxdirname($argv0);
+    my $bindir=$dir;
+    $bindir =~ s%/lib$%/bin%;
+    while (!-x "$bindir/cxmenu" or !-f "$bindir/cxmenu")
+    {
+        last if (!-l $argv0);
+        $argv0=readlink($argv0);
+        $argv0="$dir/$argv0" if ($argv0 !~ m+^/+);
+        $dir=_cxdirname($argv0);
+        $bindir=$dir;
+        $bindir =~ s%/lib$%/bin%;
+    }
+    $bindir =~ s%/(?:\./)+%/%g;
+    $bindir =~ s%/\.$%%;
+    $ENV{CX_ROOT}=_cxdirname($bindir);
+    if ((!-x "$ENV{CX_ROOT}/bin/cxmenu" or !-f "$ENV{CX_ROOT}/bin/cxmenu") and
+        $fallback)
+    {
+        $ENV{CX_ROOT}=$fallback;
+    }
+    if (!-x "$ENV{CX_ROOT}/bin/cxmenu" or !-f "$ENV{CX_ROOT}/bin/cxmenu")
+    {
+        my $name0=$0;
+        $name0 =~ s+^.*/++;
+        print STDERR "$name0:error: could not find CrossOver in '$ENV{CX_ROOT}'\n";
+        exit 1;
+    }
+    return $ENV{CX_ROOT};
+}
+
+BEGIN {
+    unshift @INC, locate_cx_root() . "/lib/perl";
+}
+use CXLog;
+use CXUtils;
+
+
+
+
+# Process command-line options
+my $opt_template;
+my $opt_query;
+my $opt_param;
+my $opt_verbose;
+my $opt_help;
+require CXOpts;
+my $cxopts=CXOpts->new();
+$cxopts->add_options(["template=s"    => \$opt_template,
+                      "query=s"       => \$opt_query,
+                      "param=s@"      => \$opt_param,
+                      "verbose!"      => \$opt_verbose,
+                      "?|h|help"      => \$opt_help
+                     ]);
+my $err=$cxopts->parse();
+CXLog::fdopen(2) if ($opt_verbose);
+
+
+
+# Validate the command line options
+my $usage;
+my ($template_dir, $template_name);
+if ($err)
+{
+    cxerr("$err\n");
+    $usage=2;
+}
+elsif ($opt_help)
+{
+    $usage=0;
+}
+else
+{
+    if (!defined $opt_template)
+    {
+        cxerr("you must specify a template name\n");
+        $usage=1;
+    }
+    else
+    {
+        $template_name=cxbasename($opt_template);
+        if ($opt_template =~ m%/%)
+        {
+            $template_dir=$opt_template;
+        }
+        else
+        {
+            $template_dir="$ENV{CX_ROOT}/share/crossover/bottle_templates/$opt_template";
+        }
+        if (!-d $template_dir)
+        {
+            cxerr("unable to find the '$opt_template' bottle template\n");
+            $usage=1;
+        }
+        elsif (!-f "$template_dir/CXBT_${template_name}.pm")
+        {
+            cxerr("'$opt_template' is not a valid bottle template\n");
+            $usage=1;
+        }
+    }
+    if (!defined $opt_query)
+    {
+        cxerr("you must specify a query type\n");
+        $usage=1;
+    }
+}
+
+
+# Print usage
+if (defined $usage)
+{
+    my $name0=cxname0();
+    if ($usage)
+    {
+        cxerr("try '$name0 --help' for more information\n");
+        exit $usage;
+    }
+    print "Usage: $name0 --template TEMPLATE --query QUERY [--param PARAM]\n";
+
+    print "\n";
+    print "Provides a command-line interface for managing the CrossOver bottles.\n";
+
+    print "\n";
+    print "Options:\n";
+    print "  --template TEMPLATE Identifies the bottle template to query\n";
+    print "  --query QUERY   Specifies what the query is about. All templates support the\n";
+    print "                  'introspect' query type which will list the supported query\n";
+    print "                  types\n";
+    print "  --param PARAM   Additional parameters of the form 'NAME=VALUE' for the\n";
+    print "                  bottle template\n";
+    print "  --verbose       Output more information about what is going on\n";
+    print "  --help, -h      Shows this help message\n";
+    exit 0;
+}
+
+
+unshift @INC, $template_dir;
+eval "use CXBT_${template_name};";
+if ($@)
+{
+    cxerr("unable to load the 'CXBT_${template_name}' module: $@\n");
+    exit 1;
+}
+my $template=eval "CXBT_${template_name}->new()";
+if ($@)
+{
+    cxerr("unable to create the 'CXBT_${template_name}' template object: $@\n");
+    exit 1;
+}
+
+my $params;
+foreach my $param (@{$opt_param})
+{
+    $params->{$1}=$2 if ($param =~ /^([^=]+)=(.*)$/);
+}
+
+my $data=$template->query($opt_query, $params);
+if (!defined $data)
+{
+    cxerr("$@\n");
+    exit 1;
+}
+if ($opt_query eq "introspect")
+{
+    $data->{queries}->{introspect}="Returns the bottle template's properties";
+}
+
+foreach my $section (sort keys %$data)
+{
+    print "[$section]\n";
+    foreach my $name (sort keys %{$data->{$section}})
+    {
+        print "\"", escape_string($name), "\" = \"", escape_string($data->{$section}->{$name}), "\"\n";
+    }
+    print "\n";
+}
+
+exit 0;

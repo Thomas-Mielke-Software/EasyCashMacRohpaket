@@ -1,0 +1,317 @@
+#!/usr/bin/perl
+# (c) Copyright 2006-2007, 2010. CodeWeavers, Inc.
+use warnings;
+use strict;
+
+# Portable which(1) implementation
+sub cxwhich($$;$)
+{
+    my ($dirs, $app, $noexec)=@_;
+    if ($app =~ /^\//)
+    {
+        return $app if ((-x $app or $noexec) and -f $app);
+    }
+    elsif ($app =~ /\//)
+    {
+        require Cwd;
+        my $path=Cwd::cwd() . "/$app";
+        return $path if ((-x $path or $noexec) and -f $path);
+    }
+    else
+    {
+        foreach my $dir (split /:/, $dirs)
+        {
+            return "$dir/$app" if ($dir ne "" and (-x "$dir/$app" or $noexec) and -f "$dir/$app");
+        }
+    }
+    return undef;
+}
+
+# Fast dirname() implementation
+sub _cxdirname($)
+{
+    my ($path)=@_;
+    return undef if (!defined $path);
+    return "." if ($path !~ s!/+[^/]+/*$!!s);
+    return "/" if ($path eq "");
+    return $path;
+}
+
+# Locate where CrossOver is installed by looking for the directory
+# where the cxmenu script is located, unwinding symlinks on the way
+sub locate_cx_root(;$)
+{
+    my ($fallback)=@_;
+    my $argv0=cxwhich($ENV{PATH},$0);
+    $argv0=$0 if (!defined $argv0);
+    if ($argv0 !~ m+^/+)
+    {
+        require Cwd;
+        $argv0=Cwd::cwd() . "/$argv0";
+    }
+    my $dir=_cxdirname($argv0);
+    my $bindir=$dir;
+    $bindir =~ s%/lib$%/bin%;
+    while (!-x "$bindir/cxmenu" or !-f "$bindir/cxmenu")
+    {
+        last if (!-l $argv0);
+        $argv0=readlink($argv0);
+        $argv0="$dir/$argv0" if ($argv0 !~ m+^/+);
+        $dir=_cxdirname($argv0);
+        $bindir=$dir;
+        $bindir =~ s%/lib$%/bin%;
+    }
+    $bindir =~ s%/(?:\./)+%/%g;
+    $bindir =~ s%/\.$%%;
+    $ENV{CX_ROOT}=_cxdirname($bindir);
+    if ((!-x "$ENV{CX_ROOT}/bin/cxmenu" or !-f "$ENV{CX_ROOT}/bin/cxmenu") and
+        $fallback)
+    {
+        $ENV{CX_ROOT}=$fallback;
+    }
+    if (!-x "$ENV{CX_ROOT}/bin/cxmenu" or !-f "$ENV{CX_ROOT}/bin/cxmenu")
+    {
+        my $name0=$0;
+        $name0 =~ s+^.*/++;
+        print STDERR "$name0:error: could not find CrossOver in '$ENV{CX_ROOT}'\n";
+        exit 1;
+    }
+    return $ENV{CX_ROOT};
+}
+
+BEGIN {
+    unshift @INC, locate_cx_root() . "/lib/perl";
+}
+use CXLog;
+use CXUtils;
+
+# Process command-line options
+my $opt_background;
+my $opt_verbose;
+my $opt_help;
+require CXOpts;
+my $cxopts=CXOpts->new(["stop_on_unknown", "stop_on_non_option"]);
+$cxopts->add_options(["background!" => \$opt_background,
+                      "verbose!"    => \$opt_verbose,
+                      "?|h|help"    => \$opt_help
+                     ]);
+my $err=$cxopts->parse();
+CXLog::fdopen(2) if ($opt_verbose);
+
+
+# Validate the command line options
+my $usage;
+if ($err)
+{
+    cxerr("$err\n");
+    $usage=2;
+}
+elsif ($opt_help)
+{
+    $usage=0;
+}
+else
+{
+    if (!@ARGV)
+    {
+        cxerr("you must specify the document to open\n");
+        $usage=2;
+    }
+    elsif (@ARGV > 1)
+    {
+        cxerr("only one document can be opened at a time\n");
+        $usage=2;
+    }
+    elsif (!-e $ARGV[0])
+    {
+        cxerr("'$ARGV[0]' does not exist\n");
+        $usage=2;
+    }
+}
+
+
+# Print usage
+if (defined $usage)
+{
+    my $name0=cxname0();
+    if ($usage)
+    {
+        cxerr("try '$name0 --help' for more information\n");
+        exit $usage;
+    }
+    print "Usage: $name0 [--background] [--help] [--verbose] <DocumentPath>\n";
+
+    print "\n";
+    print "Dispatches a document to the system association handler.\n";
+
+    print "\n";
+    print "Options:\n";
+    print "  --background    If an association is found, open the document in the\n";
+    print "                  background and return 0. Otherwise return 3\n";
+    print "  --verbose       Print more information about what is going on\n";
+    print "  --help, -h      Shows this help message\n";
+    exit 0;
+}
+
+# Heuristics to determine if the document got opened or not
+sub compute_exit_code($$$)
+{
+    my ($timeout, $output, $rc)=@_;
+
+    # For Apple's 'open' command
+    return 3 if ($output =~ /\bLSOpenFromURLSpec\(\)\s+\w+\s+-/);
+
+    # If something is still running it must be because the document got opened
+    return 0 if ($timeout);
+
+    # The child process closed the pipe but is still running.
+    # Assume that we hit an application that closes all file
+    # descriptors on startup
+    return 0 if (!defined $rc);
+
+    # Use the tool's return code to determine if it succeeded
+    return ($rc == 0 ? 0 : 3);
+}
+
+# Known association tools
+my (@open_list, %is_asynchronous);
+push @open_list, "open";
+
+
+foreach my $open_cmd (@open_list)
+{
+    my @open=CXUtils::cmdline2argv($open_cmd);
+    my $open_path=cxwhich($ENV{PATH}, $open[0]);
+    if (defined $open_path and -s $open_path)
+    {
+        if (!$opt_background)
+        {
+            cxexec(@open, $ARGV[0]);
+            last;
+        }
+        if ($is_asynchronous{$open_cmd})
+        {
+            cxlog("'$open_cmd' is an asynchronous tool\n");
+            my $rc=cxsystem(@open, $ARGV[0]);
+            exit ($rc == 0 ? 0 : 3);
+        }
+
+        # Non-asynchronous tools are tricky to handle.
+        # * Some, like run-mailcap, are truly synchronous and block until
+        #   the user closes the application.
+        # * Some, like xdg-open, are sometimes asynchronous, e.g. in GNOME, and
+        #   sometimes synchronous, for instance in fvwm where it just execs
+        #   run-mailcap.
+        # * Others, such as Apple's open, are asynchronous but always return
+        #   zero, so that we have to capture their stderr to distinguish
+        #   success from failure. However, a simple `open 2>&1 &` blocks
+        #   until all child processes have closed which brings us back to the
+        #   synchronous case.
+        #
+        # So we use heuristics:
+        # * We give the application 2 seconds to return an error. If it takes
+        #   longer then we assume it successfully opened the document.
+        # * We create a 'sentinel' pipe which will only get closed when all
+        #   child processes have quit. This lets us take into account
+        #   asynchronous tools that open the document in the background.
+        # * We use the above sentinel pipe instead of solely relying on stderr
+        #   to because a graphical tool may decide to close stderr on startup
+        #   but is less likely to mess with other file descriptors.
+        # * We redirect and capture stderr in case the tool provides no usable
+        #   return code.
+        use Fcntl;
+        local (*PIPE_P, *PIPE_C);
+        pipe PIPE_P, PIPE_C;
+        local (*OUT_P, *OUT_C);
+        pipe OUT_P, OUT_C;
+        my $pid=fork();
+        if (!defined $pid)
+        {
+            cxerr("unable to fork: $!\n");
+            exit 1;
+        }
+        if (!$pid)
+        {
+            fcntl PIPE_C, F_SETFD, 0;
+            close PIPE_P;
+
+            my $fd=fileno(*OUT_C);
+            open STDOUT, ">&$fd";
+            open STDERR, ">&$fd";
+            my $cmd=$open_cmd . " " . shquote_string($ARGV[0]);
+            cxexec($cmd);
+            cxerr("could not start '$cmd': $!\n");
+            exit 1;
+        }
+        close PIPE_C;
+        my $flags=0;
+        fcntl(OUT_P, F_GETFL, $flags);
+        $flags|=O_NONBLOCK;
+        fcntl(OUT_P, F_SETFL, $flags);
+
+        my $rein="";
+        my ($pipe_pfd, $out_pfd)=(fileno(PIPE_P), fileno(OUT_P));
+        vec($rein, $pipe_pfd, 1)=1;
+        vec($rein, $out_pfd, 1)=1;
+        my $output="";
+        my $timeout=0;
+        my $sigalrm=$SIG{ALRM} || "DEFAULT";
+        $SIG{ALRM}=sub { $timeout=1; };
+        alarm 2;
+        while (!$timeout and select(my $rout=$rein, undef, my $eout=$rein, undef))
+        {
+            if (vec($rout, $out_pfd, 1) == 1)
+            {
+                my $rc=sysread OUT_P, $output, 8192, length($output);
+                if (defined $rc)
+                {
+                    if ($rc)
+                    {
+                        cxlog("got ",(defined $rc ? $rc : "<undef>"), " bytes, output=[$output]\n");
+                    }
+                    else
+                    {
+                        cxlog("The child closed stdout+stderr\n");
+                        vec($rein, $out_pfd, 1)=0;
+                    }
+                }
+            }
+            elsif (vec($rout, $pipe_pfd, 1) == 1)
+            {
+                cxlog("The pipe got closed\n");
+                last;
+            }
+        }
+        alarm 0;
+        $SIG{ALRM}=$sigalrm;
+        close(OUT_P);
+
+        my $rc;
+        # If something is still running, then don't worry about $open_cmd's
+        # return code.
+        if (!$timeout)
+        {
+            # The file descriptors get closed before the child process is fully
+            # dead. So be prepared to wait a bit to avoid race conditions.
+            $SIG{ALRM}=sub { exit compute_exit_code($timeout, $output, undef) };
+            alarm 1;
+            my $wp=waitpid($pid, 0);
+            alarm 0;
+            $SIG{ALRM}=$sigalrm;
+            if ($wp == $pid)
+            {
+                $rc=$?;
+                cxlog(" -> rc=$rc\n");
+            }
+        }
+        else
+        {
+            cxlog(" -> timed out\n");
+        }
+
+        exit compute_exit_code($timeout, $output, $rc);
+    }
+    cxlog("  skipping '$open_cmd'\n");
+}
+cxerr("could not find a command to open the document (the following were tried: @open_list)\n");
+exit 1;

@@ -1,0 +1,238 @@
+#!/usr/bin/perl
+# (c) Copyright 2001-2012. CodeWeavers, Inc.
+use warnings;
+use strict;
+
+
+# Portable which(1) implementation
+sub cxwhich($$;$)
+{
+    my ($dirs, $app, $noexec)=@_;
+    if ($app =~ /^\//)
+    {
+        return $app if ((-x $app or $noexec) and -f $app);
+    }
+    elsif ($app =~ /\//)
+    {
+        require Cwd;
+        my $path=Cwd::cwd() . "/$app";
+        return $path if ((-x $path or $noexec) and -f $path);
+    }
+    else
+    {
+        foreach my $dir (split /:/, $dirs)
+        {
+            return "$dir/$app" if ($dir ne "" and (-x "$dir/$app" or $noexec) and -f "$dir/$app");
+        }
+    }
+    return undef;
+}
+
+# Fast dirname() implementation
+sub _cxdirname($)
+{
+    my ($path)=@_;
+    return undef if (!defined $path);
+    return "." if ($path !~ s!/+[^/]+/*$!!s);
+    return "/" if ($path eq "");
+    return $path;
+}
+
+# Locate where CrossOver is installed by looking for the directory
+# where the cxmenu script is located, unwinding symlinks on the way
+sub locate_cx_root(;$)
+{
+    my ($fallback)=@_;
+    my $argv0=cxwhich($ENV{PATH},$0);
+    $argv0=$0 if (!defined $argv0);
+    if ($argv0 !~ m+^/+)
+    {
+        require Cwd;
+        $argv0=Cwd::cwd() . "/$argv0";
+    }
+    my $dir=_cxdirname($argv0);
+    my $bindir=$dir;
+    $bindir =~ s%/lib$%/bin%;
+    while (!-x "$bindir/cxmenu" or !-f "$bindir/cxmenu")
+    {
+        last if (!-l $argv0);
+        $argv0=readlink($argv0);
+        $argv0="$dir/$argv0" if ($argv0 !~ m+^/+);
+        $dir=_cxdirname($argv0);
+        $bindir=$dir;
+        $bindir =~ s%/lib$%/bin%;
+    }
+    $bindir =~ s%/(?:\./)+%/%g;
+    $bindir =~ s%/\.$%%;
+    $ENV{CX_ROOT}=_cxdirname($bindir);
+    if ((!-x "$ENV{CX_ROOT}/bin/cxmenu" or !-f "$ENV{CX_ROOT}/bin/cxmenu") and
+        $fallback)
+    {
+        $ENV{CX_ROOT}=$fallback;
+    }
+    if (!-x "$ENV{CX_ROOT}/bin/cxmenu" or !-f "$ENV{CX_ROOT}/bin/cxmenu")
+    {
+        my $name0=$0;
+        $name0 =~ s+^.*/++;
+        print STDERR "$name0:error: could not find CrossOver in '$ENV{CX_ROOT}'\n";
+        exit 1;
+    }
+    return $ENV{CX_ROOT};
+}
+
+BEGIN {
+    unshift @INC, locate_cx_root($ENV{CX_ROOT}) . "/lib/perl";
+}
+use CXLog;
+use CXUtils;
+
+# Process command-line options
+my $opt_verbose;
+my $opt_help;
+require CXOpts;
+my $cxopts=CXOpts->new(["stop_on_unknown","stop_on_non_option"]);
+$cxopts->add_options(["verbose!"    => \$opt_verbose,
+                      "?|h|help"    => \$opt_help
+                     ]);
+my $err=$cxopts->parse();
+CXLog::fdopen(2) if ($opt_verbose);
+
+
+# Validate the command line options
+my $usage;
+if ($err)
+{
+    cxerr("$err\n");
+    $usage=2;
+}
+elsif ($opt_help)
+{
+    $usage=0;
+}
+
+
+# Print usage
+if (defined $usage)
+{
+    my $name0=cxname0();
+    if ($usage)
+    {
+        cxerr("try '$name0 --help' for more information\n");
+        exit $usage;
+    }
+    print "Usage: $name0 [--help] [--verbose] [BROWSER_OPTIONS] [URL]\n";
+
+    print "\n";
+    print "Starts a native web browser.\n";
+
+    print "\n";
+    print "Options:\n";
+    print "  BROWSER_OPTIONS Can be any option supported by your browser\n";
+    print "  URL             The URL or file you want to open\n";
+    print "  --verbose       Print more information about what is going on\n";
+    print "  --help, -h      Shows this help message\n";
+    exit 0;
+}
+
+
+# Convert the arguments
+sub process_arg($)
+{
+    my ($arg)=@_;
+
+    if ($arg =~ m%^\w+://%)
+    {
+        $arg =~ s+ +%20+g;
+    }
+    elsif (-e $arg)
+    {
+        $arg =~ s+ +%20+g;
+        if ($arg !~ m+^/+)
+        {
+            require Cwd;
+            $arg = Cwd::cwd() . "/$arg";
+        }
+        $arg = "file://localhost$arg";
+    }
+    return $arg;
+}
+
+my @args;
+cxlog("Argument conversion:\n");
+foreach my $arg (@ARGV)
+{
+    my $parg=process_arg($arg);
+    cxlog("  [$arg] -> [$parg]\n");
+    push @args,$parg;
+}
+
+my @tried_list;
+sub try_browser($)
+{
+    my ($browser_cmd)=@_;
+    push @tried_list, $browser_cmd;
+    my @browser=CXUtils::cmdline2argv($browser_cmd);
+    my $browser_path=cxwhich($ENV{PATH},$browser[0]);
+    if (defined $browser_path and -s $browser_path)
+    {
+        cxexec(@browser, @args);
+    }
+    else
+    {
+        cxlog("  skipping $browser_cmd\n");
+    }
+}
+
+
+# Import the CrossOver settings
+my $productid=CXUtils::get_product_id();
+require CXConfig;
+my $cxconfig=CXConfig->new("$ENV{CX_ROOT}/etc/$productid.conf",
+                           "$ENV{HOME}/.$productid/$productid.conf");
+my $preferred_browser=expand_cmdline($cxconfig->get("CrossOver", "PreferredBrowser"));
+try_browser($preferred_browser) if ($preferred_browser);
+
+
+# Use $BROWSER if set
+try_browser($ENV{BROWSER}) if (defined $ENV{BROWSER});
+
+# Try to pick the appropriate default for the current desktop environment
+my $de=CXUtils::get_desktop_environment();
+cxlog("desktop environment: $de\n");
+if ($de eq "macosx")
+{
+    # open require a URL as a parameter
+    try_browser("/usr/bin/open") if (@args);
+}
+else
+{
+    if (@args)
+    {
+        # These require a URL as a parameter.
+        try_browser("xdg-open");
+        try_browser("desktop-launch"); # For SUSE
+        try_browser("gnome-open") if ($de eq "gnome");
+        try_browser("xdg-open") if ($de eq "deepin");
+        # Since KDE 4.0 kioclient is preferred over kfmclient
+        try_browser("kioclient exec") if ($de eq "kde");
+    }
+    try_browser("kfmclient openURL") if ($de eq "kde");
+}
+
+# Use Debian's sensible-browser as the first fallback. Note that it does
+# not check whether KDE or GNOME is running so we do a better job already.
+# But it may be useful for other environments.
+# It seems that gnome-moz-remote sometimes returns without doing anything.
+# So put it last.
+foreach my $browser_cmd ("sensible-browser",
+                         "google-chrome", "chromium-browser",
+                         "firefox", "iceweasel", "galeon", "mozilla",
+                         "epiphany", "skipstone", "MozillaFirebird", "netscape",
+                         "konqueror",
+                         "opera",
+                         "gnome-moz-remote")
+{
+    try_browser($browser_cmd);
+}
+cxerr("could not find a native browser (the following were tried: @tried_list)\n");
+exit 1;

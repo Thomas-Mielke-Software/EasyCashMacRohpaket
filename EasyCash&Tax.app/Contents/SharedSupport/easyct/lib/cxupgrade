@@ -1,0 +1,533 @@
+#!/usr/bin/perl
+# (c) Copyright 2002-2010. CodeWeavers, Inc.
+use warnings;
+use strict;
+
+# Portable which(1) implementation
+sub cxwhich($$;$)
+{
+    my ($dirs, $app, $noexec)=@_;
+    if ($app =~ /^\//)
+    {
+        return $app if ((-x $app or $noexec) and -f $app);
+    }
+    elsif ($app =~ /\//)
+    {
+        require Cwd;
+        my $path=Cwd::cwd() . "/$app";
+        return $path if ((-x $path or $noexec) and -f $path);
+    }
+    else
+    {
+        foreach my $dir (split /:/, $dirs)
+        {
+            return "$dir/$app" if ($dir ne "" and (-x "$dir/$app" or $noexec) and -f "$dir/$app");
+        }
+    }
+    return undef;
+}
+
+# Fast dirname() implementation
+sub _cxdirname($)
+{
+    my ($path)=@_;
+    return undef if (!defined $path);
+    return "." if ($path !~ s!/+[^/]+/*$!!s);
+    return "/" if ($path eq "");
+    return $path;
+}
+
+# Locate where CrossOver is installed by looking for the directory
+# where the cxmenu script is located, unwinding symlinks on the way
+sub locate_cx_root(;$)
+{
+    my ($fallback)=@_;
+    my $argv0=cxwhich($ENV{PATH},$0);
+    $argv0=$0 if (!defined $argv0);
+    if ($argv0 !~ m+^/+)
+    {
+        require Cwd;
+        $argv0=Cwd::cwd() . "/$argv0";
+    }
+    my $dir=_cxdirname($argv0);
+    my $bindir=$dir;
+    $bindir =~ s%/lib$%/bin%;
+    while (!-x "$bindir/cxmenu" or !-f "$bindir/cxmenu")
+    {
+        last if (!-l $argv0);
+        $argv0=readlink($argv0);
+        $argv0="$dir/$argv0" if ($argv0 !~ m+^/+);
+        $dir=_cxdirname($argv0);
+        $bindir=$dir;
+        $bindir =~ s%/lib$%/bin%;
+    }
+    $bindir =~ s%/(?:\./)+%/%g;
+    $bindir =~ s%/\.$%%;
+    $ENV{CX_ROOT}=_cxdirname($bindir);
+    if ((!-x "$ENV{CX_ROOT}/bin/cxmenu" or !-f "$ENV{CX_ROOT}/bin/cxmenu") and
+        $fallback)
+    {
+        $ENV{CX_ROOT}=$fallback;
+    }
+    if (!-x "$ENV{CX_ROOT}/bin/cxmenu" or !-f "$ENV{CX_ROOT}/bin/cxmenu")
+    {
+        my $name0=$0;
+        $name0 =~ s+^.*/++;
+        print STDERR "$name0:error: could not find CrossOver in '$ENV{CX_ROOT}'\n";
+        exit 1;
+    }
+    return $ENV{CX_ROOT};
+}
+
+BEGIN {
+    unshift @INC, locate_cx_root() . "/lib/perl";
+}
+use CXLog;
+use CXUtils;
+
+my $builtin_product_id=CXUtils::get_builtin_product_id();
+
+
+#####
+#
+# Configuration file creation / upgrade
+#
+#####
+
+sub detect_shortcutdirs($)
+{
+    my ($section)=@_;
+    my $dirs=$section->get("ManagedShortcutDirs");
+    if (!defined $dirs and $> == 0)
+    {
+        my @list;
+        push @list, "/usr/bin" if (-d "/usr/bin" and -w "/usr/bin");
+        $section->set("ManagedShortcutDirs", join(":", @list)) if (@list);
+    }
+
+    $dirs=$section->get("PrivateShortcutDirs");
+    if (!defined $dirs)
+    {
+        my @list;
+        push @list, "\${HOME}/bin";
+        $section->set("PrivateShortcutDirs", join(":", @list)) if (@list);
+    }
+}
+
+sub create_crossover_config($$$)
+{
+    my ($filename, $package, $productid)=@_;
+
+    my $template="$ENV{CX_ROOT}/share/crossover/data/$builtin_product_id.conf";
+    if (!-e $template)
+    {
+        cxerr("unable to find '$template'\n");
+        exit 1;
+    }
+    require CXRWConfig;
+    my $cxconfig=CXRWConfig->new($template);
+
+    my $s=$cxconfig->get_section("CrossOver");
+    return if (!$s);
+
+    detect_shortcutdirs($s);
+
+    my $libpath=$cxconfig->get("Wine", "LibPath");
+    if (!$libpath and `uname -s` eq "SunOS\n" and -d "/usr/X11/lib")
+    {
+        $cxconfig->set("Wine", "LibPath", "\${CX_ROOT}/lib:/usr/X11/lib:\${LD_LIBRARY_PATH}");
+        my $dllpath=$cxconfig->get("Wine", "DllPath");
+        $cxconfig->set("Wine", "DllPath", "\${CX_ROOT}/lib/wine") if (!$dllpath);
+    }
+
+    # We never keep these settings in the per-user configuration file
+    $s->remove("ProductVersion");
+    $s->remove("BuildTag");
+    $s->remove("BuildTimestamp");
+    $s->set("ProductPackage", $package) if ($package);
+
+    $cxconfig->set_filename($filename);
+    if (!$cxconfig->save())
+    {
+        cxwarn("unable to save '$filename': $!\n");
+    }
+}
+
+sub upgrade_crossover_config($$$$)
+{
+    my ($filename, $package, $productid, $opt_old_version)=@_;
+
+    require CXUpgrade;
+    cxlog("\nUpgrading '$filename'\n\n");
+    my $src=CXUpgrade->new($filename);
+    if (!$src)
+    {
+        cxlog("unable to read '$filename': $!\n");
+        $src=CXUpgrade->new(undef);
+    }
+    my $s=$src->get_section("CrossOver");
+    my $old_version;
+    $old_version=$s->get("ProductVersion") if (defined $s);
+    $old_version=$opt_old_version || "1.3.1" if (!defined $old_version);
+    cxlog("Old Version=$old_version\n");
+    $old_version=~s/[^0-9.].*$//;
+    $old_version=~s/^([0-9]\.)/0$1/;
+
+    my $template="$ENV{CX_ROOT}/share/crossover/data/$builtin_product_id.conf";
+    my $dst=CXUpgrade->new($template);
+    if (!defined $dst)
+    {
+        cxerr("unable to read '$template': $!\n");
+        return $old_version;
+    }
+
+
+    # Tweak the configuration values
+    my $bottle=$src->add_section("BottleDefaults");
+    $s=$src->get_section("CrossOver");
+    if (defined $s)
+    {
+        # We never keep these settings from the old file
+        $s->remove_field("Product");
+        $s->remove_field("ProductID");
+        $s->remove_field("ProductName");
+        $s->remove_field("ProductVersion");
+        $s->remove_field("BuildTag");
+        $s->remove_field("BuildTimestamp");
+
+        # ConfigFileVersion has been removed
+        $s->remove_field("ConfigFileVersion");
+
+        if ($old_version lt "05.0")
+        {
+            detect_shortcutdirs($s);
+
+            my $plugindirs=$s->get("LinuxNSPluginDirs");
+            if ($plugindirs)
+            {
+                my $scope=($> == 0 ? "Managed" : "Private");
+                $s->set("${scope}LinuxNSPluginDirs", $plugindirs);
+                $s->remove_field("LinuxNSPluginDirs");
+            }
+        }
+
+        # LinuxBrowser -> PreferredBrowser
+        my $value=$s->get("LinuxBrowser");
+        if (defined $value)
+        {
+            $s->set("PreferredBrowser",$value);
+        }
+        $s->remove_field("LinuxBrowser");
+
+        # Update MIMEIgnoreList
+        my $d=$s->get("MIMEIgnoreList", "");
+        if ($d =~ m!^text/html(?::text/plain:application/x-crossover-doc)?$!)
+        {
+            $s->remove_field("MIMEIgnoreList");
+        }
+    }
+    else
+    {
+        $s=$src->add_section("CrossOver");
+    }
+    $s->set("ProductPackage", $package) if ($package);
+
+    # [BottleDefaults] / MyDocumentsDir has been removed
+    $bottle->remove_field("MyDocumentsDir");
+
+    $s=$src->get_section("MIMEAliases");
+    if (defined $s)
+    {
+        my $d;
+        $d=$s->get("application/msexcel", "");
+        $s->remove_field("application/msexcel") if ($d eq "application/vnd.ms-excel");
+
+        $d=$s->get("application/mspowerpoint", "");
+        $s->remove_field("application/mspowerpoint") if ($d eq "application/vnd.ms-powerpoint");
+
+        $d=$s->get("video/x-ms-asf", "");
+        $s->remove_field("video/x-ms-asf") if ($d eq "video/x-ms-wmv");
+    }
+
+    $s=$src->get_section("OfficeSetup");
+    if (defined $s)
+    {
+        # UrlOnlineUpdate does not exist anymore
+        $s->remove_field("UrlOnlineUpdate");
+
+        # MIMEIgnoreList moved to [CrossOver]
+        my $field=$s->get_field("MIMEIgnoreList");
+        my $d=$src->get_section("CrossOver");
+        if (defined $field and defined $d)
+        {
+            $d->add_field($field);
+        }
+        $s->remove_field("MIMEIgnoreList");
+
+        # MyDocsDir, HttpProxyHost and HttpProxyPort don't exist anymore
+        $s->remove_field("MyDocsDir");
+        $s->remove_field("HttpProxyHost");
+        $s->remove_field("HttpProxyPort");
+    }
+
+    $s=$src->get_section("Default");
+    if (defined $s)
+    {
+        # MainPath, WinePrefix, RootMode & SkipDebianMenus do not exist anymore
+        $s->remove_field("MainPath");
+        $s->remove_field("WinePrefix");
+        $s->remove_field("RootMode");
+        $s->remove_field("SkipDebianMenus");
+
+        # WinePrefixCreate moved to cxbottle.conf
+        $s->remove_field("WinePrefixCreate");
+
+        # LDAssumeKernel and WineDebugLevel have been removed
+        $s->remove_field("LDAssumeKernel");
+        $s->remove_field("WineDebugLevel");
+
+        # Update the LDPreload field
+        my $value=$s->get("LDPreload");
+        if (defined $value)
+        {
+            # LDPreload="" is now what ';LDPreload' does
+            $s->remove_field("LDPreload") if ($value eq "");
+        }
+        elsif (defined $s->get_field("LDPreload"))
+        {
+            # ';LDPreload' now should be written as follows
+            $s->set("LDPreload","\${LD_PRELOAD}");
+        }
+
+        # MenuPrefix moved to [BottleDefaults] and cxbottle.conf
+        $value=$s->get("MenuPrefix");
+        $bottle->set("MenuRoot",$value) if (defined $value);
+        $s->remove_field("MenuPrefix");
+
+        # And finally, rename this section to [Wine]
+        $src->rename_section($s, "Wine");
+    }
+
+    # Do the final merge and write the new configuration file
+    $dst->merge($src);
+    $dst->write($filename);
+
+    # FIXME: CXUpgrade won't let us remove fields from the destination file :-(
+    require CXRWConfig;
+    my $cxconfig=CXRWConfig->new($filename);
+    $s=$cxconfig->get_section("CrossOver");
+    if (defined $s)
+    {
+        # We never keep these settings in the per-user configuration file
+        $s->remove("ProductVersion");
+        $s->remove("BuildTag");
+        $s->remove("BuildTimestamp");
+        $cxconfig->save();
+    }
+
+
+    return $old_version;
+}
+
+
+
+#####
+#
+# Main
+#
+#####
+
+# Parse the command line arguments
+my $opt_package;
+my $opt_productid;
+my $opt_old_version;
+my $opt_install_bottles;
+my $opt_verbose;
+my $opt_help;
+require CXOpts;
+my $cxopts=CXOpts->new();
+$cxopts->add_options(["package=s"       => \$opt_package,
+                      "productid=s"     => \$opt_productid,
+                      "old-version=s"   => \$opt_old_version,
+                      "install-bottles" => \$opt_install_bottles,
+                      "verbose!"        => \$opt_verbose,
+                      "?|h|help"        => \$opt_help
+                     ]);
+my $err=$cxopts->parse();
+CXLog::fdopen(2) if ($opt_verbose);
+
+# Verify command line options
+my $usage;
+if ($err)
+{
+    cxerr("$err\n");
+    $usage=2;
+}
+elsif ($opt_help)
+{
+    $usage=0;
+}
+else
+{
+    if (!$opt_productid)
+    {
+        cxerr("you must specify the product id\n");
+        $usage=2;
+    }
+    $opt_old_version="" if (!defined $opt_old_version);
+    $opt_old_version=~s/[^0-9.].*$//;
+    $opt_old_version=~s/^([0-9]\.)/0$1/;
+}
+
+# Print usage
+if (defined $usage)
+{
+    my $name0=cxname0();
+    if ($usage)
+    {
+        cxerr("try '$name0 --help' for more information\n");
+        exit $usage;
+    }
+    print "Usage: $name0 --productid productid [--old-version oldversion] [--install-bottles] [--verbose]\n";
+    exit 0;
+}
+
+# Create or upgrade the CrossOver configuration
+require CXBottle;
+CXBottle::get_crossover_config();
+my $user_dir=CXBottle::get_user_dir();
+cxmkpath($user_dir);
+my $filename="$user_dir/$opt_productid.conf";
+if (!-f $filename)
+{
+    create_crossover_config($filename, $opt_package, $opt_productid);
+}
+else
+{
+    $opt_old_version=upgrade_crossover_config($filename, $opt_package, $opt_productid, $opt_old_version);
+}
+
+# Upgrade / install the CrossOver menus and associations
+my $uassoc="";
+my $umenu="";
+if ($opt_old_version ne "")
+{
+    # For upgrades by default we at least do a removeall to make sure we get
+    # rid of obsolete menus and associations before installing the new ones.
+    $umenu=$uassoc="removeall";
+    if ($opt_old_version lt "05.0")
+    {
+        if ($opt_productid eq $builtin_product_id)
+        {
+            # Delete the legacy menus, associations and plugins
+            my @scopes=("private");
+            push @scopes, "managed" if ($> == 0);
+            foreach my $scope (@scopes)
+            {
+                cxsystem("$ENV{CX_ROOT}/bin/cxmenu", "--removeall",
+                         "--pattern", "legacy", "--scope", $scope,
+                         "--ignorelist", "");
+                cxsystem("$ENV{CX_ROOT}/bin/cxassoc", "--removeall",
+                         "--pattern", "legacy", "--scope", $scope,
+                         "--ignorelist", "");
+            }
+        }
+        # - The above commands also deleted the legacy menus, associations and
+        #   plugins of existing bottles. This makes it almost impossible to
+        #   use them. So trigger an upgrade of the bottles (letting the wine
+        #   script do all the work) which will re-install them too.
+        # - Also, always try to trigger an upgrade of the (presumably) managed
+        #   bottles as they are mostly used by non-root users and those users
+        #   cannot upgrade them.
+        $uassoc="";
+        $umenu="";
+    }
+    if ($opt_old_version le "10.0.1")
+    {
+        $uassoc="nukeall";
+    }
+}
+
+my @cmd;
+@cmd=("$ENV{CX_ROOT}/bin/cxmenu", "--crossover");
+if ($umenu eq "nukeall")
+{
+    # See the comments for the associations nukeall action.
+    cxsystem(@cmd, "--removeall", "--ignorelist", "");
+}
+push @cmd, "--removeall" if ($umenu eq "removeall");
+cxsystem(@cmd, "--install");
+
+
+# Call get_crossover_config() to get CX_(MANAGED_)BOTTLE_PATH.
+CXBottle::get_crossover_config();
+foreach my $scope ("managed", "private")
+{
+    my $path=($scope eq "private" ? $ENV{CX_BOTTLE_PATH} : $ENV{CX_MANAGED_BOTTLE_PATH});
+    foreach my $dir (split /:+/, $path)
+    {
+        next if ($dir eq "");
+
+        my $dh;
+        next if (!opendir($dh, $dir));
+        foreach my $dentry (readdir $dh)
+        {
+            next if ($dentry =~ /^(?:\.\.?|default)$/);
+
+            # Note that bottles may not have a cxbottle.conf file yet
+            next if (!-f "$dir/$dentry/system.reg");
+
+            if ($opt_install_bottles)
+            {
+                # Check whether the bottle is meant to be installed
+                require CXConfig;
+                my $cxbottle=CXConfig->new("$dir/$dentry/cxbottle.conf");
+                if (CXBottle::get_bottle_mode($cxbottle, $scope) eq "stub")
+                {
+                    # Stub bottles are not installed (ever) and don't need to
+                    # be upgraded. So skip them.
+                    cxlog("not reinstalling '$dir/$dentry' because it is a stub\n");
+                    next;
+                }
+
+                my $installed;
+                # Since cxbottle.conf has not be upgraded yet, use 'install'
+                # as the default if the 'XxxMode' setting is missing
+                if ($cxbottle->get("Bottle", "MenuMode", "install") =~ /^install$/i)
+                {
+                    cxsystem("$ENV{CX_ROOT}/bin/cxmenu",
+                             "--bottle", $dentry, "--scope", $scope,
+                             "--install");
+                    $installed=1;
+                }
+                if ($cxbottle->get("Bottle", "AssocMode", "install") =~ /^install$/i)
+                {
+                    cxsystem("$ENV{CX_ROOT}/bin/cxassoc",
+                             "--bottle", $dentry, "--scope", $scope,
+                             "--install");
+                    $installed=1;
+                }
+                if (!$installed and $scope eq "managed")
+                {
+                    # Even if they are not installed, upgrade the managed
+                    # bottles as not doing so could require upgrading the RPM
+                    # bottle package too
+                    cxsystem("$ENV{CX_ROOT}/bin/wine",
+                             "--bottle", $dentry, "--scope", $scope,
+                             "--ux-app", "true");
+                }
+            }
+            elsif ($scope eq "managed")
+            {
+                # Upgrade the managed bottles as not doing so
+                # could require upgrading the RPM bottle package too
+                cxsystem("$ENV{CX_ROOT}/bin/wine",
+                         "--bottle", $dentry, "--scope", $scope,
+                         "--ux-app", "true");
+            }
+        }
+        closedir($dh);
+    }
+}
+
+exit 0;

@@ -1,0 +1,1894 @@
+#!/usr/bin/perl
+# (c) Copyright 2005-2018. CodeWeavers, Inc.
+use warnings;
+use strict;
+
+# Portable which(1) implementation
+sub cxwhich($$;$)
+{
+    my ($dirs, $app, $noexec)=@_;
+    if ($app =~ /^\//)
+    {
+        return $app if ((-x $app or $noexec) and -f $app);
+    }
+    elsif ($app =~ /\//)
+    {
+        require Cwd;
+        my $path=Cwd::cwd() . "/$app";
+        return $path if ((-x $path or $noexec) and -f $path);
+    }
+    else
+    {
+        foreach my $dir (split /:/, $dirs)
+        {
+            return "$dir/$app" if ($dir ne "" and (-x "$dir/$app" or $noexec) and -f "$dir/$app");
+        }
+    }
+    return undef;
+}
+
+# Fast dirname() implementation
+sub _cxdirname($)
+{
+    my ($path)=@_;
+    return undef if (!defined $path);
+    return "." if ($path !~ s!/+[^/]+/*$!!s);
+    return "/" if ($path eq "");
+    return $path;
+}
+
+# Locate where CrossOver is installed by looking for the directory
+# where the cxmenu script is located, unwinding symlinks on the way
+sub locate_cx_root(;$)
+{
+    my ($fallback)=@_;
+    my $argv0=cxwhich($ENV{PATH},$0);
+    $argv0=$0 if (!defined $argv0);
+    if ($argv0 !~ m+^/+)
+    {
+        require Cwd;
+        $argv0=Cwd::cwd() . "/$argv0";
+    }
+    my $dir=_cxdirname($argv0);
+    my $bindir=$dir;
+    $bindir =~ s%/lib$%/bin%;
+    while (!-x "$bindir/cxmenu" or !-f "$bindir/cxmenu")
+    {
+        last if (!-l $argv0);
+        $argv0=readlink($argv0);
+        $argv0="$dir/$argv0" if ($argv0 !~ m+^/+);
+        $dir=_cxdirname($argv0);
+        $bindir=$dir;
+        $bindir =~ s%/lib$%/bin%;
+    }
+    $bindir =~ s%/(?:\./)+%/%g;
+    $bindir =~ s%/\.$%%;
+    $ENV{CX_ROOT}=_cxdirname($bindir);
+    if ((!-x "$ENV{CX_ROOT}/bin/cxmenu" or !-f "$ENV{CX_ROOT}/bin/cxmenu") and
+        $fallback)
+    {
+        $ENV{CX_ROOT}=$fallback;
+    }
+    if (!-x "$ENV{CX_ROOT}/bin/cxmenu" or !-f "$ENV{CX_ROOT}/bin/cxmenu")
+    {
+        my $name0=$0;
+        $name0 =~ s+^.*/++;
+        print STDERR "$name0:error: could not find CrossOver in '$ENV{CX_ROOT}'\n";
+        exit 1;
+    }
+    return $ENV{CX_ROOT};
+}
+
+BEGIN {
+    unshift @INC, locate_cx_root() . "/lib/perl";
+}
+use CXLog;
+use CXUtils;
+
+
+# Packaging helpers
+my $package_version="2.38.3";
+
+{
+    package CXBDebian;
+    use CXDebian;
+    use base "CXDebian";
+
+    sub new($$$)
+    {
+        my ($class, $buildroot, $installroot)=@_;
+        my $self=CXDebian::new($class, $buildroot);
+        $self->{installroot}=$installroot if ($self);
+        return $self;
+    }
+
+    sub map_directory($$$)
+    {
+        my ($self, $root, $dir)=@_;
+        return undef if ($dir eq "desktopdata");
+        return "$self->{installroot}/$dir";
+    }
+
+    sub map_file($$$)
+    {
+        my ($self, $root, $file)=@_;
+        return undef if ($file eq "files");
+        return undef if ($self->{hardcode} and $file eq "cxbottle.conf");
+        return $file if ($file =~ m%^/%);
+        return "$self->{installroot}/$file";
+    }
+}
+
+{
+    package CXBRPM;
+    use CXRPM;
+    use base "CXRPM";
+
+    sub map_directory($$$$)
+    {
+        my ($self, $root, $dir, $mode)=@_;
+        $mode|=0055;
+
+        return undef if ($dir eq "desktopdata");
+        return ($dir, $mode);
+    }
+
+    sub map_file($$$$)
+    {
+        my ($self, $root, $file, $mode)=@_;
+
+        # Setuid and setgid don't make sense for bottle files and
+        # are dangerous. So remove them. Allow the sticky bit though.
+        $mode=($mode & 01777) | ($mode & 0100 ? 0055 : 0044);
+
+        return undef if ($file eq "files");
+        return ($file, $mode);
+    }
+}
+
+{
+    package CXBSunpkg;
+    use CXSunpkg;
+    use base "CXSunpkg";
+
+    sub package_directory($$$$)
+    {
+        my ($self, $root, $dir, $mode)=@_;
+
+        return undef if ($dir =~ /^(?:desktopdata|drive_c)$/);
+        $mode|=0055;
+        return $mode;
+    }
+
+    sub package_file($$$$)
+    {
+        my ($self, $root, $file, $mode)=@_;
+
+        return undef if ($file eq "files");
+        # Setuid and setgid don't make sense for bottle files and
+        # are dangerous. So remove them. Allow the sticky bit though.
+        $mode=($mode & 01777) | ($mode & 0100 ? 0055 : 0044);
+        return $mode;
+    }
+}
+
+sub get_tmpdir(;$)
+{
+    my ($tmpdir)=@_;
+    foreach my $dir ($tmpdir, $ENV{TMPDIR})
+    {
+        return $dir if (defined $dir and -d $dir and -w _);
+    }
+    return "/tmp";
+}
+
+
+# Process command-line options
+my $opt_create;
+my $opt_description;
+my $opt_param;
+my $opt_delete;
+my $opt_install;
+my $opt_uninstall;
+my $opt_removeall;
+my $opt_ro_desktopdata;
+my $opt_tar;
+my $opt_cpio;
+my $opt_deb;
+my $opt_rpm;
+my $opt_sunpkg;
+my $opt_sunzip;
+my $opt_release;
+my $opt_hardcode;
+my $opt_packager;
+my $opt_productid;
+my $opt_rename;
+my $opt_restore;
+my $opt_restored;
+my $opt_set_timestamps;
+my $opt_new_uuid;
+my $opt_set_uuid;
+my $opt_get_uuid;
+my $opt_copy;
+my $opt_status;
+my $opt_default;
+my $opt_undefault;
+my $opt_utf8;
+my $opt_bottle;
+my $opt_pattern;
+my $opt_template;
+my $opt_scope;
+my $opt_force;
+my $opt_verbose;
+my $opt_help;
+require CXOpts;
+my $cxopts=CXOpts->new();
+$cxopts->add_options(["create"        => \$opt_create,
+                      "delete"        => \$opt_delete,
+                      "install"       => \$opt_install,
+                      "uninstall"     => \$opt_uninstall,
+                      "removeall"     => \$opt_removeall,
+                      "ro-desktopdata"=> \$opt_ro_desktopdata,
+                      "tar=s"         => \$opt_tar,
+                      "cpio=s"        => \$opt_cpio,
+                      "deb"           => \$opt_deb,
+                      "rpm"           => \$opt_rpm,
+                      "sunpkg"        => \$opt_sunpkg,
+                      "sunzip=s"      => \$opt_sunzip,
+                      "release=s"     => \$opt_release,
+                      "hardcode"      => \$opt_hardcode,
+                      "packager=s"    => \$opt_packager,
+                      "productid=s"   => \$opt_productid,
+                      "rename=s"      => \$opt_rename,
+                      "restore=s"     => \$opt_restore,
+                      "restored"      => \$opt_restored,
+                      "set-timestamps"=> \$opt_set_timestamps,
+                      "new-uuid"      => \$opt_new_uuid,
+                      "set-uuid=s"    => \$opt_set_uuid,
+                      "get-uuid"      => \$opt_get_uuid,
+                      "copy=s"        => \$opt_copy,
+                      "status"        => \$opt_status,
+                      "default"       => \$opt_default,
+                      "undefault"     => \$opt_undefault,
+                      "description=s" => \$opt_description,
+                      "param=s@"      => \$opt_param,
+                      "bottle=s"      => \$opt_bottle,
+                      "pattern=s"     => \$opt_pattern,
+                      "template=s"    => \$opt_template,
+                      "scope=s"       => \$opt_scope,
+                      "force"         => \$opt_force,
+                      "verbose!"      => \$opt_verbose,
+                      "?|h|help"      => \$opt_help
+                     ]);
+my $err=$cxopts->parse();
+CXLog::fdopen(2) if ($opt_verbose);
+
+
+# Validate the command line options
+my $usage;
+my $template_dir;
+my ($only_removeall, $relax_wineprefix);
+my $no_update;
+if ($err)
+{
+    cxerr("$err\n");
+    $usage=2;
+}
+elsif ($opt_help)
+{
+    $usage=0;
+}
+else
+{
+    if (!$opt_utf8)
+    {
+        # Re-encode the parameters to UTF-8
+        require CXRecode;
+        $opt_description=CXRecode::from_sys("UTF-8", $opt_description);
+    }
+
+    my $cmd_count=0;
+    $cmd_count++ if (defined $opt_create);
+    $cmd_count++ if (defined $opt_restore);
+    $cmd_count++ if (defined $opt_restored);
+    $cmd_count++ if (defined $opt_copy);
+    $cmd_count++ if (defined $opt_status);
+    if ($cmd_count > 1)
+    {
+        cxerr("--create, --restore, --copy, --restored and --status are mutually incompatible\n");
+        $usage=2;
+    }
+    $cmd_count++ if (defined $opt_delete);
+    $cmd_count++ if (defined $opt_removeall);
+    $cmd_count++ if (defined $opt_set_timestamps);
+
+    my $cmd_count_all=$cmd_count;
+    $cmd_count_all++ if (defined $opt_new_uuid);
+    $cmd_count_all++ if (defined $opt_set_uuid);
+    $cmd_count_all++ if (defined $opt_get_uuid);
+    $cmd_count_all++ if (defined $opt_install);
+    $cmd_count_all++ if (defined $opt_uninstall);
+    my $archive_count=0;
+    $archive_count++ if (defined $opt_tar);
+    $archive_count++ if (defined $opt_cpio);
+    $archive_count++ if (defined $opt_deb);
+    $archive_count++ if (defined $opt_rpm);
+    $archive_count++ if (defined $opt_sunpkg);
+    $cmd_count_all+=$archive_count;
+    $cmd_count_all++ if (defined $opt_description);
+    $cmd_count_all++ if (defined $opt_default);
+    $cmd_count_all++ if (defined $opt_undefault);
+    if ($opt_status and $cmd_count_all > 1)
+    {
+        cxerr("--status is incompatible with all other commands\n");
+        $usage=2;
+    }
+
+    if ($opt_undefault and $cmd_count_all > 1)
+    {
+        cxerr("--undefault is incompatible with all other commands\n");
+        $usage=2;
+    }
+
+    $only_removeall=1 if ($cmd_count_all == 1 and defined $opt_removeall);
+    $relax_wineprefix=1 if ($cmd_count_all == $archive_count or $opt_status or $opt_get_uuid);
+    if ($cmd_count_all == 0)
+    {
+        cxerr("you must specify the operation to perform\n");
+        $usage=2;
+    }
+    elsif ($cmd_count_all == $cmd_count)
+    {
+        $no_update=1;
+    }
+    if (defined $opt_set_uuid)
+    {
+        if (defined $opt_new_uuid)
+        {
+            cxerr("--new-uuid and --set-uuid are mutually incompatible\n");
+            $usage=2;
+        }
+        if ($opt_set_uuid !~ /^[0-9A-Za-z-]{2,}$/)
+        {
+            cxerr("the specified unique id is not valid\n");
+            $usage=2;
+        }
+    }
+    if (defined $opt_ro_desktopdata and !defined $opt_install and
+        !defined $opt_uninstall and !defined $opt_removeall)
+    {
+        cxerr("--ro-desktopdata must be used with one of --install, --uninstall or --removeall\n");
+        $usage=2;
+    }
+    if (defined $opt_pattern)
+    {
+        if (!defined $opt_removeall)
+        {
+            cxerr("--pattern can only be used with --removeall\n");
+            $usage=2;
+        }
+        if (length($opt_pattern) < 4)
+        {
+            cxerr("the pattern must be at least 4 characters long\n");
+            $usage=2;
+        }
+    }
+
+    $ENV{CX_BOTTLE}=$opt_bottle if (defined $opt_bottle);
+}
+
+if (!defined $usage)
+{
+    if ($opt_create)
+    {
+        if (!defined $ENV{CX_BOTTLE})
+        {
+            cxerr("you must specify a bottle name for the --create option\n");
+            $usage=2;
+        }
+
+        $opt_template="win98" if (!defined $opt_template);
+        if ($opt_template =~ m%/%)
+        {
+            $template_dir=$opt_template;
+        }
+        else
+        {
+            $template_dir="$ENV{CX_ROOT}/share/crossover/bottle_templates/$opt_template";
+        }
+        if (!-d $template_dir)
+        {
+            cxerr("unable to find the '$opt_template' template\n");
+            $usage=1;
+        }
+    }
+    else
+    {
+        $ENV{CX_BOTTLE}="default" if (!defined $ENV{CX_BOTTLE} and !defined $opt_restore and !($only_removeall and defined $opt_pattern));
+        if (defined $opt_template or defined $opt_param)
+        {
+            cxerr("--template and --param can only be used with --create\n");
+            $usage=2;
+        }
+        if (defined $ENV{CX_BOTTLE} and defined $opt_pattern)
+        {
+            cxerr("--pattern cannot be used on a bottle\n");
+            $usage=2;
+        }
+    }
+    if (lc($ENV{CX_BOTTLE} || "") eq "default" and ($opt_create or defined $opt_restore))
+    {
+        cxerr("invalid bottle name '$ENV{CX_BOTTLE}'. Use the --default option instead\n");
+        $usage=2;
+    }
+
+    if (!defined $opt_scope and ($opt_create or $opt_restore or defined $opt_copy))
+    {
+        $opt_scope="private";
+    }
+    if (defined $opt_scope)
+    {
+        $opt_scope=~ tr/A-Z/a-z/;
+        if ($opt_scope !~ /^(managed|private)$/)
+        {
+            cxerr("unknown scope value '$opt_scope'\n");
+            $usage=2;
+        }
+    }
+
+    if ($opt_deb or $opt_rpm or $opt_sunpkg)
+    {
+        $opt_release=1 if (($opt_release || "") eq "");
+        $opt_packager=CXUtils::get_product_name() . " <info\@codeweavers.com>" if (!defined $opt_packager);
+        if (defined $opt_productid)
+        {
+            my $res=CXUtils::check_product_id($opt_productid);
+            if ($res)
+            {
+                cxerr("the specified product id is not valid: $res\n");
+                $usage=2;
+            }
+        }
+        else
+        {
+            $opt_productid=CXUtils::get_product_id();
+            my $pkginfo=cxwhich($ENV{PATH}, "pkginfo");
+            if (defined $pkginfo)
+            {
+                # On Solaris the productid may have been changed just because
+                # we're not the first instance of this package. If so, use
+                # the original productid (which happens to be the Solaris
+                # package name).
+                my $instance=cxbasename($ENV{CX_ROOT});
+                if (cxsystem("pkginfo", "-q", $instance)==0)
+                {
+                    my $instanceid=$instance;
+                    $instanceid =~ s/\.//;
+                    if ($instanceid eq $opt_productid)
+                    {
+                        $opt_productid=$instance;
+                        $opt_productid=~s/\.\d+$//;
+                    }
+                }
+            }
+        }
+    }
+    elsif (defined $opt_release or defined $opt_packager or defined $opt_productid or defined $opt_rename)
+    {
+        cxerr("the --release, --packager, --productid and --rename options can only be used with the --deb, --rpm or --sunpkg options\n");
+        $usage=2;
+    }
+    if (defined $opt_hardcode and !defined $opt_deb)
+    {
+        cxerr("the --hardcode option can only be used with the --deb option\n");
+        $usage=2;
+    }
+    if (defined $opt_sunzip)
+    {
+        if (!$opt_sunpkg)
+        {
+            cxerr("the --sunzip option can only be used with the --sunpkg option\n");
+            $usage=2;
+        }
+        require CXSunpkg;
+        if (!CXSunpkg::is_valid_zip_format($opt_sunzip))
+        {
+            cxerr("unknown compression format '$opt_sunzip' for the --sunzip option\n");
+            $usage=2;
+        }
+    }
+    $opt_sunzip||="bzip2";
+    if (($only_removeall or $opt_delete) and defined $ENV{RPM_INSTALL_PREFIX})
+    {
+        # This is an awful kludge to make it possible to upgrade the buggy
+        # 5.0.0 and 5.0.1 bottle RPM packages
+        my $cmd="cat /proc/" . getppid() . "/cmdline 2>/dev/null";
+        my @args=split /\0/, cxbackquote($cmd, 1);
+        cxlog("parent args=[", join("|", @args), "]\n");
+        if (@args == 3 and $args[1] =~ /rpm-tmp/ and $args[2] eq "1")
+        {
+            cxlog("called by a buggy pre or post uninstall RPM script -> quitting\n");
+            exit 0;
+        }
+    }
+    if ($opt_force and !$opt_delete)
+    {
+        cxerr("--force can only be used with --delete\n");
+        $usage=2;
+    }
+}
+
+
+# Print usage
+if (defined $usage)
+{
+    my $name0=cxname0();
+    if ($usage)
+    {
+        cxerr("try '$name0 --help' for more information\n");
+        exit $usage;
+    }
+    print "Usage: $name0 --bottle BOTTLE [--scope SCOPE]\n";
+    print "                [--create [create-options]] [--copy SOURCE] [--default]\n";
+    print "                [--undefault]\n";
+    print "                [[--deb] [--rpm] [--sunpkg [--sunzip FMT]] [packaging-options]]\n";
+    print "                [--tar FILE] [--cpio FILE] [--restore ARCHIVE] [--restored]\n";
+    print "                [--new-uuid|--set-uuid UUID] [--get-uuid]\n";
+    print "                [--install] [--uninstall] [--removeall [--pattern pattern]]\n";
+    print "                [--status] [--delete [--force]] [--help] [--verbose]\n";
+
+    print "\n";
+    print "Provides a command-line interface for managing the CrossOver bottles.\n";
+
+    print "\n";
+    print "Options:\n";
+    print "  --bottle BOTTLE Operate on the specified bottle\n";
+    print "  --scope SCOPE   If set to managed, the bottle will be looked up in the\n";
+    print "                  system-wide bottle locations, otherwise it will refer to a\n";
+    print "                  private bottle\n";
+    print "  --ro-desktopdata Treat the desktopdata / bottle directory as read-only\n";
+    print "  --create        Creates a new bottle\n";
+    print "    --description DESCRIPTION A description for the bottle\n";
+    print "    --template TEMPLATE Identifies the type of bottle to create. The 'win98',\n";
+    print "                    'win2000' and 'winxp' types create bottles that claim to\n";
+    print "                    be Windows 98, 2000 and XP respectively\n";
+    print "    --param PARAM   Additional parameters of the form 'NAME=VALUE' for the\n";
+    print "                    bottle template or 'SECTION:KEY=VALUE' for the bottle\n";
+    print "                    configuration\n";
+    print "  --copy SOURCE   Makes a copy of the SOURCE bottle\n";
+    print "  --default       Selects the bottle as the default bottle\n";
+    print "  --undefault     Unsets the default bottle\n";
+    print "  --deb           Creates a Debian package containing the specified bottle.\n";
+    print "  --rpm           Creates an RPM package containing the specified bottle.\n";
+    print "    --description DESCRIPTION A description for the Debian or RPM package\n";
+    print "  --sunpkg        Creates a Solaris package containing the specified bottle.\n";
+    print "    --sunzip FMT    The compression format to use. The default is bzip2, the\n";
+    print "                    others are none, gzip and 7z\n";
+    print "    --release RELEASE Specifies the bottle package's release number\n";
+    print "    --packager PACKAGER Specifies the name and email address of the bottle\n";
+    print "                    packager\n";
+    print "    --productid PRODUCTID Specifies the product id of CrossOver on the target\n";
+    print "                    system\n";
+    print "  --tar FILE      Creates a tar archive of the specified bottle\n";
+    print "                  If FILE ends in '.cxarchive', '.tgz' or '.gz' it will be\n";
+    print "                  compressed with gzip. Similarly, it will be compressed with\n";
+    print "                  bzip2 or compress if it ends in '.bz2' or '.Z' respectively\n";
+    print "  --cpio FILE     Creates a cpio archive of the specified bottle\n";
+    print "                  If FILE ends in '.cxarchive' or '.gz' it will be compressed\n";
+    print "                  with gzip. Similarly, it will be compressed with bzip2 or\n";
+    print "                  compress if it ends in '.bz2' or '.Z' respectively\n";
+    print "  --restore ARCHIVE Restores the bottle contained in the specified archive\n";
+    print "                  Note that this does not install the bottle. See --install\n";
+    print "  --restored      Updates a freshly, manually restored bottle. This is an\n";
+    print "                  advanced option and is unnecessary if --restore was used\n";
+    print "  --new-uuid      Changes the bottle's unique identifier\n";
+    print "  --set-uuid UUID Sets the bottle's unique identifier to UUID\n";
+    print "  --get-uuid      Prints the bottle's unique identifier to stdout\n";
+    print "  --install       Exports the bottle's menus, associations and plugins\n";
+    print "                  so they can be used from the supported desktop environments\n";
+    print "                  (e.g. GNOME, KDE) and web browsers\n";
+    print "  --uninstall     Removes the bottle's known menus, associations and plugins\n";
+    print "                  from the desktop environments and browsers\n";
+    print "  --removeall     Each bottle has a unique id which is used to tag its menus,\n";
+    print "                  associations and plugins. This option removes anything\n";
+    print "                  bearing the bottle's unique id\n";
+    print "    --pattern PATTERN Specifies that --removeall should delete anything that\n";
+    print "                    bears an id matching the specified regular expression\n";
+    print "  --status        Prints the bottle status on standard output\n";
+    print "  --delete        Deletes the specified bottle, that is everything contained\n";
+    print "                  in the bottle's directory, including its virtual c: drive\n";
+    print "                  Note that this does not uninstall the bottle.\n";
+    print "                  See also --uninstall and --removeall\n";
+    print "    --force         If set, no confirmation is asked before deleting the bottle\n";
+    print "  --verbose       Output more information about what is going on\n";
+    print "  --help, -h      Shows this help message\n";
+    exit 0;
+}
+
+
+# Determine and check wineprefix
+require CXBottle;
+my $cxconfig=CXBottle::get_crossover_config();
+my $raw_wineprefix;
+
+# Create / Restore / Copy bottles
+my $bottle_lock;
+sub create_and_lock_wineprefix($)
+{
+    my ($wineprefix)=@_;
+    if (!cxmkpath($wineprefix))
+    {
+        cxerr("unable to create the '$wineprefix' directory: $@\n");
+        exit 1;
+    }
+    $bottle_lock=CXBottle::lock_bottle($wineprefix);
+}
+
+sub is_wineserver_running($$)
+{
+    my ($bottle, $scope)=@_;
+    return !cxsystem("$ENV{CX_ROOT}/bin/wine", "--no-lock",
+                     "--bottle", $bottle, "--scope", $scope,
+                     "--ux-app", "wineserver", "-k0");
+}
+
+sub lock_and_shutdown_bottle($$$$)
+{
+    my ($bottle, $scope, $wineprefix, $msg)=@_;
+
+    # Lock the bottle to prevent new processes from starting
+    my $lock=CXBottle::lock_bottle($wineprefix);
+
+    # Stop all windows applications in this bottle. Note that there is nothing
+    # we can do if the bottle does not belong to us.
+    if (-o $wineprefix and is_wineserver_running($bottle, $scope))
+    {
+        my $pid=cxwait(1, "--no-focus", "--title", "Bottle shutdown", $msg);
+
+        cxsystem("$ENV{CX_ROOT}/bin/wine", "--no-lock",
+                 "--bottle", $bottle, "--scope", $scope,
+                 "--wl-app", "wineboot.exe",
+                 "--", "--end-session", "--shutdown", "--force", "--kill");
+
+        my $stopped=5;
+        while ($stopped)
+        {
+            sleep(1);
+            last if (!is_wineserver_running($bottle, $scope));
+            $stopped--;
+        }
+        kill(15, $pid) if (defined $pid);
+        if (!$stopped)
+        {
+            # The bottle shutdown failed or has been canceled so unlock it
+            CXUtils::cxunlock($lock);
+            cxmessage("-title", "CrossOver Error",
+                      "-buttons", "OK",
+                      "-default", "OK",
+                      "-image", "crossover",
+                      "There are still applications running in the \%s bottle. Aborting the current operation.", $bottle);
+            return undef;
+        }
+    }
+    return $lock;
+}
+
+if ($opt_create)
+{
+    cxerr("This OEM version does not allow creating extra bottles\n");
+    exit 1;
+}
+
+elsif (defined $opt_restore)
+{
+    my $tmpdir;
+    if (defined $ENV{CX_BOTTLE})
+    {
+        $raw_wineprefix=CXBottle::compute_new_wineprefix($ENV{CX_BOTTLE}, $opt_scope);
+        if (!defined $raw_wineprefix)
+        {
+            cxerr("$@\n");
+            exit 1;
+        }
+        $ENV{WINEPREFIX}=CXUtils::cxrealpath($raw_wineprefix);
+        $tmpdir=cxdirname($ENV{WINEPREFIX}) ."/tmp-cxbottle-$$";
+    }
+    else
+    {
+        $tmpdir=CXBottle::compute_new_wineprefix("tmp-cxbottle-$$", $opt_scope);
+        if (!defined $tmpdir)
+        {
+            cxerr("$@\n");
+            exit 1;
+        }
+        $tmpdir=CXUtils::cxrealpath($tmpdir);
+    }
+    umask(umask() & ~0055) if ($opt_scope eq "managed" and $> == 0);
+
+    # Create a temporary directory where we can safely extract the archive
+    if (!cxmkpath($tmpdir, 0700))
+    {
+        cxerr("unable to create the '$tmpdir' temporary directory: $@\n");
+        exit 1;
+    }
+    # Lock it in case the archive does not contain the leading directory
+    $bottle_lock=CXBottle::lock_bottle($tmpdir);
+
+    # Use a pseudo-loop to simplify error handling
+    my $rc;
+    while (1)
+    {
+        if ($opt_restore ne "-" and $opt_restore !~ m%^/%)
+        {
+            require Cwd;
+            $opt_restore=Cwd::cwd() . "/$opt_restore";
+        }
+        my ($uncompress, $is_cpio, $capture_stderr);
+        if ($opt_restore =~ /\.cxarchive$/)
+        {
+            if (open(my $fh, "<", $opt_restore))
+            {
+                my $head;
+                read($fh, $head, 6);
+                if ($head =~ /^\037\213/)
+                {
+                    $uncompress=[CXUtils::get_gzip(), "-d", "-c", $opt_restore];
+                }
+                elsif ($head =~ /^BZh/)
+                {
+                    $uncompress=[CXUtils::get_bzip2(), "-d", "-c", $opt_restore];
+                }
+                elsif ($head =~ /^7z\274\257\047\034/)
+                {
+                    $uncompress=["7za", "x", $opt_restore, "-so"];
+                    # 7za pollutes stderr
+                    $capture_stderr=1;
+                }
+                else
+                {
+                    $is_cpio=1 if ($head =~ /^07070[127]/);
+                }
+                close($fh);
+
+                if ($uncompress)
+                {
+                    my $cmd=join(" ", (map { shquote_string($_) } @$uncompress));
+                    $cmd .= " 2>/dev/null" if ($capture_stderr);
+                    if (open(my $fh, "$cmd |"))
+                    {
+                        read($fh, $head, 6);
+                        $is_cpio=1 if ($head =~ /^07070[127]/);
+                        close($fh);
+                    }
+                }
+            }
+            else
+            {
+                # By default assume this is in gzip format
+                $uncompress=[CXUtils::get_gzip(), "-d", "-c", $opt_restore];
+            }
+        }
+        elsif ($opt_restore =~ /\.(?:gz|tgz)$/)
+        {
+            $uncompress=[CXUtils::get_gzip(), "-d", "-c", $opt_restore];
+        }
+        elsif ($opt_restore =~ /\.bz2$/)
+        {
+            $uncompress=[CXUtils::get_bzip2(), "-d", "-c", $opt_restore];
+        }
+        elsif ($opt_restore =~ /\.7z$/)
+        {
+            $uncompress=["7za", "x", $opt_restore, "-so"];
+            # 7za pollutes stderr
+            $capture_stderr=1;
+        }
+        elsif ($opt_restore =~ /\.Z$/)
+        {
+            $uncompress=["uncompress", "-c", $opt_restore];
+        }
+
+        my $cmd;
+        if ($is_cpio or $opt_restore =~ /\.cpio(?:\.7z|\.bz2|\.gz|\.Z)?$/)
+        {
+            $cmd=["cpio", "-i", "-d", "-m"];
+            # cpio pollutes stderr
+            $capture_stderr=1;
+        }
+        else
+        {
+            $cmd=[CXUtils::get_tar(), "xf", "-"];
+        }
+        $cmd=[["cd", $tmpdir], "&&", $cmd];
+        $cmd=[$cmd, "2>"] if ($capture_stderr);
+
+        if ($uncompress)
+        {
+            $cmd=[$uncompress, "|", $cmd];
+        }
+        elsif ($opt_restore ne "-")
+        {
+            $cmd=[$cmd, "<", $opt_restore];
+        }
+
+        my $shcmd=new_shell_command({cmd => $cmd, capture_output => 1});
+        if ($shcmd->run())
+        {
+            print STDERR $shcmd->get_error_report();
+            cxerr("unable to extract the bottle from '$opt_restore'\n");
+            $rc=1;
+            last;
+        }
+
+        my $dstdir=$ENV{WINEPREFIX};
+        my $srcdir;
+        if (-f "$tmpdir/cxbottle.conf")
+        {
+            # The archive did not contain any leading directory which is not
+            # really standard. But we'll deal with it anyway...
+            $srcdir=$tmpdir;
+            chmod(0777 & ~umask(), $tmpdir);
+
+            # Keep the lock on $tmpdir as it will become the wineprefix
+            # This relies on the fact that bottle locks are independent of
+            # the bottle name
+        }
+        else
+        {
+            my $count=0;
+            if (opendir(my $dh, $tmpdir))
+            {
+                foreach my $dentry (readdir $dh)
+                {
+                    next if ($dentry =~ /^\.\.?$/);
+                    $count++;
+                    last if ($count > 1);
+                    $srcdir="$tmpdir/$dentry";
+                }
+                closedir($dh);
+            }
+            if ($count != 1 or !-d $srcdir)
+            {
+                cxerr("'$opt_restore' does not contain a bottle\n");
+                $rc=1;
+                last;
+            }
+            if (!defined $dstdir)
+            {
+                $dstdir=cxdirname($tmpdir) . "/" . cxbasename($srcdir);
+            }
+
+            # Lock the directory that will become the wineprefix
+            # This relies on the fact that bottle locks are independent of
+            # the bottle name
+            CXUtils::cxunlock($bottle_lock);
+            $bottle_lock=CXBottle::lock_bottle($srcdir);
+        }
+        $dstdir=cxdirname($tmpdir) . "/win98" if (!defined $dstdir);
+        if (-d $dstdir)
+        {
+            cxerr("'$dstdir' already exists\n");
+            $rc=1;
+            last;
+        }
+        if (!rename $srcdir, $dstdir)
+        {
+            cxerr("unable to move the bottle to '$dstdir': $!\n");
+            $rc=1;
+            last;
+        }
+
+        # Set CX_BOTTLE and WINEPREFIX to match this bottle
+        $ENV{CX_BOTTLE}=cxbasename($dstdir) if (!defined $ENV{CX_BOTTLE});
+        $ENV{WINEPREFIX}=$dstdir;
+
+        if (cxbasename($srcdir) ne $ENV{CX_BOTTLE})
+        {
+            # The bottle is being renamed. So change the bottle id to
+            # avoid trouble if the same archive is restored multiple times
+            $opt_new_uuid=1;
+        }
+        $opt_restored=1;
+        last;
+    }
+
+    # Cleanup
+    if (-d $tmpdir)
+    {
+        require File::Path;
+        if (!File::Path::rmtree($tmpdir))
+        {
+            cxwarn("unable to delete the '$tmpdir' directory: $!\n");
+        }
+    }
+
+    if ($rc)
+    {
+        CXUtils::cxunlock($bottle_lock);
+        exit $rc;
+    }
+}
+
+elsif (defined $opt_copy)
+{
+    my $srcdir=CXBottle::find_bottle($opt_copy, "private");
+    if (defined $srcdir)
+    {
+        require CXConfig;
+        my $cxbottle=CXConfig->new("$srcdir/cxbottle.conf");
+        my $mode=CXBottle::get_bottle_mode($cxbottle, "private");
+        $srcdir=undef if (($mode || "managed") eq "stub");
+    }
+    $srcdir=CXBottle::find_bottle($opt_copy, "managed") if (!defined $srcdir);
+    if (!defined $srcdir)
+    {
+        cxerr("unable to find the '$opt_copy' bottle\n");
+        exit 1;
+    }
+    my $srclock;
+    if (-o $srcdir)
+    {
+        my $msg=cxgettext("The applications in the \%s bottle must be shut down for the copy to proceed.", $opt_copy);
+        $srclock=lock_and_shutdown_bottle($opt_copy, "private", $srcdir, $msg);
+    }
+    else
+    {
+        cxlog("not shutting down the source bottle processes because it does not belong to the current user\n");
+    }
+
+
+    $raw_wineprefix=CXBottle::compute_new_wineprefix($ENV{CX_BOTTLE}, $opt_scope);
+    if (!defined $raw_wineprefix)
+    {
+        cxerr("$@\n");
+        CXUtils::cxunlock($srclock);
+        exit 1;
+    }
+    if (-e $raw_wineprefix)
+    {
+        cxerr("'$ENV{CX_BOTTLE}' already exists\n");
+        CXUtils::cxunlock($srclock);
+        exit 1;
+    }
+    umask(umask() & ~0055) if ($opt_scope eq "managed" and $> == 0);
+    create_and_lock_wineprefix($raw_wineprefix);
+    $ENV{WINEPREFIX}=CXUtils::cxrealpath($raw_wineprefix);
+
+    my $exclude="$ENV{WINEPREFIX}.$$.exclude";
+    my $fh;
+    if (!open($fh, ">", $exclude))
+    {
+        cxerr("unable to open '$exclude' for writing: $!\n");
+        CXUtils::cxunlock($bottle_lock);
+        CXUtils::cxunlock($srclock);
+        exit 1;
+    }
+    print $fh "/files\n";
+    print $fh "/desktopdata\n";
+    close($fh);
+
+    my $tar=CXUtils::get_tar();
+    my $cmd=[[["cd", $srcdir], "&&", [$tar, "cfX", "-", $exclude, "."]],
+             "|",
+             [["cd", $ENV{WINEPREFIX}], "&&", [$tar, "xf", "-"]]
+            ];
+    my $shcmd=new_shell_command({cmd => $cmd, capture_output => 1});
+    my $failed=$shcmd->run();
+    unlink $exclude;
+    if ($failed)
+    {
+        CXUtils::cxunlock($srclock);
+        print STDERR $shcmd->get_error_report();
+        cxerr("unable to copy '$opt_copy' to '$ENV{CX_BOTTLE}'\n");
+        require File::Path;
+        if (!File::Path::rmtree($ENV{WINEPREFIX}))
+        {
+            cxwarn("unable to delete the '$ENV{WINEPREFIX}' directory: $!\n");
+        }
+        CXUtils::cxunlock($bottle_lock);
+        exit 1;
+    }
+
+    # And unlock the source bottle
+    if (defined $srclock and !CXUtils::cxunlock($srclock))
+    {
+        cxwarn("unable to release the source bottle lock\n");
+    }
+
+    $opt_new_uuid=1;
+    $opt_restored=1;
+}
+
+elsif (defined $ENV{CX_BOTTLE})
+{
+    my $scope;
+    ($scope, $raw_wineprefix)=CXBottle::setup_bottle_wineprefix($opt_scope);
+    if (defined $scope and !defined $opt_scope and !defined $opt_status)
+    {
+        # Arbitrate between stub and managed bottles
+        # if the scope was not specified explicitly
+        ($scope, $raw_wineprefix)=CXBottle::bottle_stub2managed($scope, $raw_wineprefix);
+    }
+    if (defined $scope and !CXBottle::is_wineprefix_valid($ENV{WINEPREFIX}, $relax_wineprefix))
+    {
+        $scope=undef;
+    }
+    if (!defined $scope)
+    {
+        cxerr($@);
+        exit 1;
+    }
+    $opt_scope=$scope;
+    umask(umask() & ~0055) if ($opt_scope eq "managed" and $> == 0);
+}
+
+if ($opt_new_uuid)
+{
+    $opt_set_uuid=CXUtils::get_unique_id($ENV{WINEPREFIX});
+}
+
+if ($opt_set_timestamps)
+{
+    if (open(my $fh, "<", "$ENV{WINEPREFIX}/files"))
+    {
+        my $err;
+        while (my $line=<$fh>)
+        {
+            next if ($line !~ /^(\d+) (.*)$/);
+            my ($mtime, $filename)=($1, $2);
+
+            # We may have timestamps for files that no longer exist
+            # (typically files in Temp).
+            next if (!-f "$ENV{WINEPREFIX}/$filename");
+
+            if (!utime $mtime, $mtime, "$ENV{WINEPREFIX}/$filename")
+            {
+                cxerr("unable to restore the '$filename' timestamp: $!\n");
+                $err=1;
+            }
+        }
+        close($fh);
+        exit(1) if ($err);
+    }
+    else
+    {
+        cxerr("unable to open '$ENV{WINEPREFIX}/files' for reading: $!\n");
+        exit(1);
+    }
+}
+
+if ($opt_restored)
+{
+    require CXRWConfig;
+    my $filename="$ENV{WINEPREFIX}/cxbottle.conf";
+    my $cxbottle=CXRWConfig->new($filename);
+    my $settings=$cxbottle->append_section("Bottle");
+
+    if ($settings->get("MenuMode", "") ne "frozen" and
+        $settings->get("AssocMode", "") ne "frozen" and
+        -d "$ENV{WINEPREFIX}/desktopdata")
+    {
+        # A freshly restored bottle is not installed and thus should not
+        # have a desktopdata directory, unless some menus, associations or
+        # plugins are frozen.
+        require File::Path;
+        File::Path::rmtree("$ENV{WINEPREFIX}/desktopdata");
+    }
+    CXBottle::fix_ownership_permissions($ENV{WINEPREFIX}, $opt_scope);
+
+    # Check the bottle's character encoding
+    my $system_encoding=CXUtils::get_system_encoding(1);
+    my $bottle_encoding=$settings->get("Encoding", "ANSI_X3.4-1968");
+    if ($bottle_encoding ne "ANSI_X3.4-1968" and
+        $bottle_encoding ne $system_encoding)
+    {
+        cxwarn("The current character encoding ($system_encoding) may not " .
+               "be compatible with the encoding of the bottle " .
+               "($bottle_encoding). This may cause applications to not " .
+               "find their files and thus lead to malfunctions.\n");
+    }
+
+    if (defined $opt_set_uuid)
+    {
+        $settings->set("BottleID", $opt_set_uuid);
+        $opt_set_uuid=undef; # so we don't set it again
+    }
+
+    my $updater=expand_string($settings->get("Updater"));
+    if ($opt_scope eq "private")
+    {
+        $settings->comment_out("Updater");
+    }
+    elsif (!$updater)
+    {
+        $updater="wineprefixcreate";
+        $settings->set("Updater", $updater);
+    }
+    if (defined $opt_description)
+    {
+        $settings->set("Description", $opt_description);
+        $opt_description=undef; # so we don't set it again
+    }
+    $settings->set("MenuMode", "ignore") if ($settings->get("MenuMode", "") ne "frozen");
+    $settings->set("AssocMode", "ignore") if ($settings->get("AssocMode", "") ne "frozen");
+
+    cxwarn("unable to save '$filename': $!\n") if (!$cxbottle->save());
+
+    # 'files' is obsolete and must be rebuilt, possibly in the next step
+    unlink "$ENV{WINEPREFIX}/files";
+
+    # Update the special folder symbolic links
+    # (this may also trigger a bottle update)
+    cxsystem("$ENV{CX_ROOT}/bin/wine", "--scope", $opt_scope,
+             "--dll", "shell32=b", "--wl-app", "rundll32.exe",
+             "shell32.dll,wine_update_symbolic_links");
+
+    CXBottle::run_bottle_hooks(["restore"]);
+
+    if ($opt_scope eq "managed" and !-f "$ENV{WINEPREFIX}/files")
+    {
+        # and if it was already up to date, take a snapshot ourselves
+        cxsystem("$ENV{CX_ROOT}/bin/wine", "--scope", $opt_scope,
+                 "--ux-app", $updater, "--snapshot");
+    }
+}
+
+if (defined $opt_set_uuid or defined $opt_description)
+{
+    # The --create, --copy and --restored (and thus --restore) operations
+    # lock the bottle and handle the --set-uuid and --description options
+    # themselves. So if we get get we know the bottle has not been locked yet.
+    $bottle_lock=CXBottle::lock_bottle($ENV{WINEPREFIX});
+    require CXRWConfig;
+    my $filename="$ENV{WINEPREFIX}/cxbottle.conf";
+    my $cxbottle=CXRWConfig->new($filename);
+    $cxbottle->set("Bottle", "BottleID", $opt_set_uuid) if (defined $opt_set_uuid);
+    $cxbottle->set("Bottle", "Description", $opt_description) if (defined $opt_description);
+    if (!$cxbottle->save())
+    {
+        cxwarn("unable to save '$filename': $!\n");
+    }
+}
+
+# The bottle is ready for use and we won't modify cxbottle.conf anymore.
+# We may relock it later if needed.
+CXUtils::cxunlock($bottle_lock);
+
+
+# Now the bottle has been created / restored / copied, we can read its
+# configuration file & co (note that there is no bottle in the
+# --removeall --pattern case).
+if (defined $ENV{WINEPREFIX})
+{
+    if (!-d $ENV{WINEPREFIX})
+    {
+        cxerr("unable to find the '$ENV{CX_BOTTLE}' bottle\n");
+        exit 1;
+    }
+    # Read the bottle configuration file
+    CXBottle::setup_bottle_environment($cxconfig, $ENV{WINEPREFIX});
+    # Update / Upgrade the bottle before trying to use it
+    if (!$no_update and !CXBottle::update_bottle($cxconfig, $ENV{WINEPREFIX}, $opt_scope))
+    {
+        cxerr("unable to update the '$ENV{CX_BOTTLE}' bottle\n");
+        exit 1;
+    }
+}
+
+if ($opt_status)
+{
+    my ($mode, $status)=CXBottle::get_bottle_status($cxconfig, $ENV{WINEPREFIX}, $opt_scope);
+    if (!defined $mode)
+    {
+        cxerr("$@");
+        exit 1;
+    }
+    print "Mode=$mode\n";
+    print "Status=$status\n";
+    exit 0;
+}
+
+if ($opt_default or $opt_undefault)
+{
+    # FIXME: This won't work if $CX_BOTTLE is an absolute path, not found
+    #        inside $CX_BOTTLE_PATH.
+    # FIXME: The default bottle should be a cxoffice.conf setting. Otherwise
+    #        there will always be an ambiguity wrt. where to create the symlink
+    my $default_link=cxdirname($raw_wineprefix) . "/default";
+    my $base_wineprefix=cxbasename($raw_wineprefix);
+    if ($opt_undefault and (readlink $default_link) ne $base_wineprefix)
+    {
+        cxwarn("'$ENV{CX_BOTTLE}' is not the default bottle\n");
+    }
+    elsif (-l $default_link and !unlink $default_link)
+    {
+        cxwarn("unable to delete '$default_link': $!\n");
+    }
+    elsif ($opt_default)
+    {
+        # Create a relative symbolic link
+        cxlog("Symlinking '$default_link' to '$base_wineprefix'\n");
+        if (!symlink($base_wineprefix, $default_link))
+        {
+            cxwarn("unable to create the 'default' bottle symlink: $!\n");
+        }
+    }
+}
+
+if ($opt_get_uuid)
+{
+    my $uuid=$cxconfig->get("Bottle", "BottleID", "");
+    print "$uuid\n";
+}
+
+my $rc;
+if ($opt_removeall or $opt_uninstall or $opt_install)
+{
+    my @args=();
+    if ($opt_removeall)
+    {
+        push @args, "--removeall";
+        push @args, "--pattern", $opt_pattern if (defined $opt_pattern);
+    }
+    if ($opt_uninstall)
+    {
+        push @args, "--uninstall";
+    }
+    if ($opt_install)
+    {
+        push @args, "--install";
+    }
+    if ($opt_ro_desktopdata)
+    {
+        push @args, "--ro-desktopdata";
+    }
+    push @args, "--scope", $opt_scope if (defined $opt_scope);
+    if ($cxconfig->get("Bottle", "MenuMode", "") ne "frozen" and
+        cxsystem("$ENV{CX_ROOT}/bin/cxmenu", @args))
+    {
+        cxerr("unable to install, uninstall or remove all the menus\n");
+        $rc=1;
+    }
+    if ($cxconfig->get("Bottle", "AssocMode", "") ne "frozen" and
+        cxsystem("$ENV{CX_ROOT}/bin/cxassoc", @args))
+    {
+        cxerr("unable to install, uninstall or remove all the associations\n");
+        $rc=1;
+    }
+}
+
+
+# Shutdown all processes in the bottle
+if (defined $opt_tar or defined $opt_cpio or defined $opt_deb or
+    defined $opt_rpm or defined $opt_sunpkg)
+{
+    my $msg=cxgettext("The applications in the \%s bottle must be shut down for the archiving or packaging operation to proceed.", $ENV{CX_BOTTLE});
+    $bottle_lock=lock_and_shutdown_bottle($ENV{CX_BOTTLE}, $opt_scope, $ENV{WINEPREFIX}, $msg);
+    exit(1) if (!$bottle_lock);
+}
+
+if (defined $opt_tar)
+{
+    my $exclude;
+    # Use a pseudo-loop to simplify error handling
+    while (1)
+    {
+        my $tmpdir=get_tmpdir(cxdirname($ENV{WINEPREFIX}));
+        $exclude="$tmpdir/cxbottle.$$.exclude";
+        my $fh;
+        if (!open($fh, ">", $exclude))
+        {
+            cxerr("unable to open '$exclude' for writing: $!\n");
+            $rc=1;
+            last;
+        }
+        my $bottle=cxbasename($ENV{WINEPREFIX});
+        print $fh "$bottle/files\n";
+        print $fh "$bottle/desktopdata\n";
+        close($fh);
+
+        my $cmd=[ ["cd", cxdirname($ENV{WINEPREFIX})], "&&",
+                  [CXUtils::get_tar(), "cfX", "-", $exclude, $bottle]
+                ];
+        if ($opt_tar =~ /\.(?:cxarchive|t?gz)$/)
+        {
+            $cmd=[$cmd, "|", [[CXUtils::get_gzip(), "-9"], ">", $opt_tar]];
+        }
+        elsif ($opt_tar =~ /\.bz2$/)
+        {
+            $cmd=[$cmd, "|", [[CXUtils::get_bzip2(), "-9"], ">", $opt_tar]];
+        }
+        elsif ($opt_tar =~ /\.7z$/)
+        {
+            # 7za pollutes stderr
+            $cmd=[$cmd, "|", [["7za", "a", $opt_tar, "-mx=9", "-si"], "2>"]];
+        }
+        elsif ($opt_tar =~ /\.Z$/)
+        {
+            $cmd=[$cmd, "|", [["compress"], ">", $opt_tar]];
+        }
+        elsif ($opt_tar eq "-")
+        {
+            # Nothing to do, the tar output goes straight to stdout.
+            # Note that capture_output must not be set when running the
+            # command.
+        }
+        else
+        {
+            $cmd=[$cmd, ">", $opt_tar];
+        }
+        my $shcmd=new_shell_command({cmd => $cmd, tmpdir => $tmpdir});
+        if ($shcmd->run())
+        {
+            print STDERR $shcmd->get_error_report();
+            cxerr("unable to archive '$ENV{CX_BOTTLE}' from '$ENV{WINEPREFIX}'\n");
+            $rc=1;
+        }
+
+        last;
+    }
+    unlink $exclude if (defined $exclude);
+}
+
+if (defined $opt_cpio)
+{
+    my $bottledir=cxdirname($ENV{WINEPREFIX});
+    my $cmd=[["cd", $bottledir], "&&",
+             [[CXUtils::get_cpio_o()], "2>"]]; # cpio pollutes stderr
+    if ($opt_cpio =~ /\.(?:cxarchive|gz)$/)
+    {
+        $cmd=[$cmd, "|", [[CXUtils::get_gzip(), "-9"], ">", $opt_cpio]];
+    }
+    elsif ($opt_cpio =~ /\.bz2$/)
+    {
+        $cmd=[$cmd, "|", [[CXUtils::get_bzip2(), "-9"], ">", $opt_cpio]];
+    }
+    elsif ($opt_cpio =~ /\.7z$/)
+    {
+        # 7za pollutes stderr
+        $cmd=[$cmd, "|", [["7za", "a", $opt_cpio, "-mx=9", "-si"], "2>"]];
+    }
+    elsif ($opt_cpio =~ /\.Z$/)
+    {
+        $cmd=[$cmd, "|", [["compress"], ">", $opt_cpio]];
+    }
+    elsif ($opt_cpio eq "-")
+    {
+        # Nothing to do, the cpio output goes straight to stdout.
+        # Note that capture_output must not be set when running the
+        # command.
+    }
+    else
+    {
+        $cmd=[$cmd, ">", $opt_cpio];
+    }
+    my $tmpdir=get_tmpdir(cxdirname($ENV{WINEPREFIX}));
+    my $shcmd=new_shell_command({cmd => $cmd, tmpdir => $tmpdir});
+    my $cmdline=$shcmd->get_command_line();
+    cxlog("Running '$cmdline'\n");
+    if (open(my $fh, "| $cmdline"))
+    {
+        my $bottle=cxbasename($ENV{WINEPREFIX});
+        print $fh "$bottle\n";
+        my @dirs=($bottle);
+      error: while (@dirs)
+        {
+            my $dh;
+            my $dir=shift @dirs;
+            if (!opendir($dh, "$bottledir/$dir"))
+            {
+                cxerr("unable to open '$bottledir/$dir': $!\n");
+                $rc=1;
+                last;
+            }
+            foreach my $dentry (readdir $dh)
+            {
+                next if ($dentry =~ /^(?:\.\.?|files|desktopdata)$/);
+                print $fh "$dir/$dentry\n";
+                if (-l "$bottledir/$dir/$dentry")
+                {
+                    # Nothing to do
+                }
+                elsif (!-r _)
+                {
+                    cxerr("unable to read '$bottledir/$dir/$dentry'\n");
+                    $rc=1;
+                    closedir($dh);
+                    last error;
+                }
+                elsif (-d _)
+                {
+                    push @dirs, "$dir/$dentry";
+                }
+            }
+            closedir($dh);
+        }
+        if (!close($fh) or $shcmd->has_errors())
+        {
+            print STDERR $shcmd->get_output();
+            cxerr("$cmdline returned $?\n");
+            cxerr("unable to create a cpio archive from '$ENV{WINEPREFIX}'\n");
+            $rc=1;
+        }
+    }
+    else
+    {
+        cxerr("unable to create a cpio archive from '$ENV{WINEPREFIX}'\n");
+        $rc=1;
+    }
+}
+
+if (defined $opt_deb)
+{
+    # Use a pseudo-loop to simplify error handling
+    my ($buildroot, $lrc);
+  error: while (1)
+    {
+        if ($opt_hardcode)
+        {
+            my $mode=CXBottle::get_bottle_mode($cxconfig, $opt_scope);
+            if ($mode ne "managed")
+            {
+                cxerr("--hardcode can only be used on managed bottles\n");
+                $lrc=1;
+                last error;
+            }
+        }
+        my $bottle=$opt_rename || cxbasename($ENV{CX_BOTTLE});
+        my $description;
+        if (defined $opt_description)
+        {
+            $description=$opt_description;
+        }
+        else
+        {
+            $description="The $bottle CrossOver Bottle.\n";
+            $description.=$cxconfig->get("Bottle", "Description", "");
+        }
+        $description =~ s/\n(?=\S)/\n /g;
+        $description =~ s/\n\n/\n .\n/g;
+        my $today=CXUtils::rfc822time(time);
+        my $installroot="/opt/$opt_productid/support/$bottle";
+        require CXDebian;
+        my $package_name=($opt_productid eq CXUtils::get_builtin_product_id() ?
+                         "cxbottle" :
+                         "$opt_productid-bottle");
+        $package_name=CXDebian::compute_package_name("$package_name-$bottle");
+
+        my $tmpdir=get_tmpdir(cxdirname($ENV{WINEPREFIX}));
+        $buildroot="$tmpdir/cxbottle.$$.buildroot";
+        my $cxdebian=CXBDebian->new($buildroot, $installroot);
+        if (!$cxdebian)
+        {
+            $lrc=1;
+            last error;
+        }
+        $cxdebian->{hardcode}=$opt_hardcode;
+
+        if (!$cxdebian->add_tree($ENV{WINEPREFIX}))
+        {
+            $lrc=1;
+            last error;
+        }
+        if ($opt_hardcode)
+        {
+            # Grab the extra files we need to package
+            my @tools=("cxmenu", "cxassoc");
+            my $bottle_id=$cxconfig->get("Bottle", "BottleID");
+            if (!defined $bottle_id)
+            {
+                cxerr("the bottle must have a unique id for --hardcode\n");
+                $lrc=1;
+                last error;
+            }
+            foreach my $tool (@tools)
+            {
+                my $start=CXLog::cxtime();
+                my $cmd=shquote_string("$ENV{CX_ROOT}/bin/$tool") .
+                    " --bottle " . shquote_string($ENV{CX_BOTTLE}) .
+                    " --scope managed --list-files |";
+                require CXConfig;
+                my $cxfiles=CXConfig->new($cmd);
+                cxlog("-> rc=$?  (took ", CXLog::cxtime()-$start, " seconds)\n");
+                if ($? != 0)
+                {
+                    cxerr("could not get the list of $tool files to package\n");
+                    exit 1;
+                }
+                $rc=1;
+
+                foreach my $menuing_system (sort $cxfiles->get_section_keys())
+                {
+                    foreach my $file (@{$cxfiles->get_section($menuing_system)->get_field_list()})
+                    {
+                        # Don't package files that will cause conflicts with
+                        # other bottle packages
+                        if (($file =~ m%^\Q$ENV{WINEPREFIX}\E/% or
+                             $file =~ /$bottle_id/) and
+                            !$cxdebian->add_file("", $file))
+                        {
+                            $lrc=1;
+                            last error;
+                        }
+                    }
+                }
+            }
+
+            # Package a modified cxbottle.conf file to freeze the menus & co.
+            require CXRWConfig;
+            my $cxbottle=CXRWConfig->new("$ENV{WINEPREFIX}/cxbottle.conf");
+            $cxbottle->set("Bottle", "MenuMode", "frozen");
+            $cxbottle->set("Bottle", "AssocMode", "frozen");
+            if (!$cxbottle->write("$buildroot/cxbottle.conf"))
+            {
+                cxerr("unable to save '$buildroot/cxbottle.conf': $!\n");
+                last error;
+            }
+            delete $cxdebian->{hardcode};
+            if (!$cxdebian->add_file($buildroot, "cxbottle.conf"))
+            {
+                $lrc=1;
+                last error;
+            }
+        }
+
+        my $template="$ENV{CX_ROOT}/share/crossover/cxbottle/deb.";
+        foreach my $file ("changelog",
+                          "compat",
+                          "control",
+                          "copyright",
+                          "postinst",
+                          "postrm",
+                          "preinst",
+                          "prerm",
+                          "build")
+        {
+            $lrc=CXUtils::generate_from_template("$buildroot/debian/$file", "$template$file",
+                {bottle          => $bottle,
+                 description     => $description,
+                 product_id      => $opt_productid,
+                 package_name    => $package_name,
+                 package_version => $package_version,
+                 release         => $opt_release,
+                 packager        => $opt_packager,
+                 date            => $today
+                });
+            last error if ($lrc);
+        }
+
+        $lrc=$cxdebian->build();
+        if ($lrc)
+        {
+            if ($ENV{CX_BOTTLE} =~ / /)
+            {
+                cxerr("try renaming the bottle to remove spaces\n");
+            }
+            last error;
+        }
+
+        # Move the Debian package to the current directory
+        my @debs=CXUtils::cxglob($buildroot, "*.deb");
+        if (!@debs)
+        {
+            cxerr("unable to find the Debian package for the $bottle bottle\n");
+        }
+        elsif (@debs > 1)
+        {
+            cxerr("found more than one Debian package for the $bottle bottle: @debs\n");
+        }
+        else
+        {
+            my $deb=cxbasename($debs[0]);
+            if (!defined cxmv($debs[0], $deb))
+            {
+                cxerr("unable to move '$debs[0]' to the current directory: $!\n");
+            }
+            rmdir cxdirname($debs[0]);
+            print "deb: $deb\n";
+        }
+
+        last;
+    }
+
+    if (defined $buildroot)
+    {
+        require File::Path;
+        File::Path::rmtree($buildroot);
+    }
+    $rc=1 if ($lrc);
+}
+
+if (defined $opt_rpm)
+{
+    # Use a pseudo-loop to simplify error handling
+    my ($tmpdir, $lrc);
+  error: while (1)
+    {
+        my $linuxrpm=CXBRPM->new();
+        if (!defined $linuxrpm->{rpmbuild})
+        {
+            $lrc=1;
+            last error;
+        }
+
+        # Make sure the generated package will work out-of-the-box with a
+        # standard install of CrossOver
+        my $product_name=CXUtils::get_product_name();
+        my $bottle=$opt_rename || cxbasename($ENV{CX_BOTTLE});
+        my $description;
+        if (defined $opt_description)
+        {
+            $description=$opt_description;
+        }
+        else
+        {
+            $description="The $bottle CrossOver Bottle.\n";
+            $description.=$cxconfig->get("Bottle", "Description", "");
+        }
+        my $rpm_prefix="/opt/$opt_productid/support/$bottle";
+        require CXRPM;
+        my $package_name=($opt_productid eq CXUtils::get_builtin_product_id() ?
+                         "cxbottle" :
+                         "$opt_productid-bottle");
+        $package_name=CXRPM::compute_package_name("$package_name-$bottle");
+
+        # Copy the bottle so it has the expected directory structure
+        $tmpdir=get_tmpdir(cxdirname($ENV{WINEPREFIX}));
+        $tmpdir=get_tmpdir() if ($tmpdir =~ / /);
+        if ($tmpdir =~ / /)
+        {
+            # RPM won't allow us to use a buildroot that contains a space.
+            # So hope we can use /tmp.
+            $tmpdir="/tmp";
+        }
+        $tmpdir.="/cxbottle.$$.buildrpm";
+
+        my $imagedir="$tmpdir/image";
+        if (!$linuxrpm->create_image($ENV{WINEPREFIX}, "$imagedir$rpm_prefix"))
+        {
+            $lrc=1;
+            last error;
+        }
+
+        my $template="$ENV{CX_ROOT}/share/crossover/cxbottle/rpm.spec";
+        my $specfile="$tmpdir/rpm.spec";
+        $lrc=CXUtils::generate_from_template($specfile, $template,
+            {bottle             => $bottle,
+             description        => $description,
+             product_id         => $opt_productid,
+             product_name       => $product_name,
+             package_name       => $package_name,
+             package_version    => $package_version,
+             release            => $opt_release,
+             packager           => $opt_packager,
+             buildroot          => $imagedir,
+             file_list          => CXRPM::escape_file_path($rpm_prefix)
+            });
+        last error if ($lrc);
+
+        $lrc=$linuxrpm->build($tmpdir);
+        last error if ($lrc);
+
+        # Move the rpm package to the current directory
+        my @rpms=CXUtils::cxglob($tmpdir, "noarch/*.rpm");
+        if (!@rpms)
+        {
+            cxerr("unable to find the RPM package for the $bottle bottle\n");
+        }
+        elsif (@rpms > 1)
+        {
+            cxerr("found more than one RPM package for the $bottle bottle: @rpms\n");
+        }
+        else
+        {
+            my $rpm=cxbasename($rpms[0]);
+            if (!defined cxmv($rpms[0], $rpm))
+            {
+                cxerr("unable to move '$rpms[0]' to the current directory: $!\n");
+            }
+            rmdir cxdirname($rpms[0]);
+            print "rpm: $rpm\n";
+        }
+
+        last;
+    }
+
+    if (defined $tmpdir)
+    {
+        require File::Path;
+        File::Path::rmtree($tmpdir);
+    }
+    $rc=1 if ($lrc);
+}
+
+if (defined $opt_sunpkg)
+{
+    my ($pkgdir, $lrc);
+
+    # Use a pseudo-loop to simplify error handling
+  error: while (1)
+    {
+        require CXSunpkg;
+        my $bottle=$opt_rename || cxbasename($ENV{CX_BOTTLE});
+        my $package_name=($opt_productid eq CXUtils::get_builtin_product_id() ?
+                          "" :
+                          "$opt_productid-");
+        $package_name=CXSunpkg::compute_package_name("cxb", "$package_name$bottle");
+        cxlog("Creating solaris tree for $package_name\n");
+
+        $pkgdir=$package_name;
+        if (-d $pkgdir)
+        {
+            require File::Path;
+            if (!File::Path::rmtree($pkgdir))
+            {
+                cxerr("unable to delete the '$pkgdir' directory\n");
+                $lrc=1;
+                last error;
+            }
+        }
+
+        my $pkg=CXBSunpkg->new($pkgdir, $opt_sunzip);
+        if (!$pkg)
+        {
+            $lrc=1;
+            last error;
+        }
+
+        my $description=$cxconfig->get("Bottle", "Description", "");
+        my ($mday, $mon, $year)=(localtime(time))[3,4,5];
+        $mon++;
+        $year+=1900;
+        my $today=sprintf("%d/%02d/%02d", $year, $mon, $mday);
+
+        if (!$pkg->generate_install_files("$ENV{CX_ROOT}/share/crossover/cxbottle/sunpkg.",
+            ["pkginfo",
+             "install/checkinstall",
+             "install/depend",
+             "install/postinstall",
+             "install/postremove",
+             "install/preremove"],
+            {package_name    => $package_name,
+             bottle          => $bottle,
+             description     => $description,
+             product_id      => $opt_productid,
+             product_name    => CXUtils::get_product_name(),
+             package_version => $package_version,
+             release         => $opt_release,
+             packager        => $opt_packager,
+             date            => $today,
+             noverify        => ($opt_sunzip eq "none" ? "" : "none")
+            }))
+        {
+            $lrc=1;
+            last error;
+        }
+
+        if (!$pkg->add_tree("reloc/\$CX_PKGINST/support/$bottle", $ENV{WINEPREFIX}, 0755) or
+            !$pkg->finalize("\$CX_PKGINST"))
+        {
+            $lrc=1;
+            last error;
+        }
+
+        my $archive="$pkgdir/archive";
+        if (!cxmkpath($archive, 0755))
+        {
+            cxerr("unable to create the '$archive' directory: $@\n");
+            $lrc=1;
+            last error;
+        }
+        # The permissions of the files in cpio may well be unsuitable for a
+        # managed bottle. So this depends on --restored to fix them.
+        my $cmd=[["cd", $ENV{WINEPREFIX}], "&&",
+                 [["find", "drive_c", "-print"],
+                  "|",
+                  [[CXUtils::get_cpio_o()], "2>"] # cpio pollutes stderr
+                 ]];
+        $archive.="/extra";
+        if ($opt_sunzip eq "gzip")
+        {
+            $cmd=[$cmd, "|", [[CXUtils::get_gzip(), "-9"], ">", "$archive.gz"]];
+        }
+        elsif ($opt_sunzip eq "bzip2")
+        {
+            $cmd=[$cmd, "|", [[CXUtils::get_bzip2(), "-9"], ">", "$archive.bz2"]];
+        }
+        elsif ($opt_sunzip eq "7z")
+        {
+            # 7za pollutes stderr
+            $cmd=[$cmd, "|", [["7za", "a", "$archive.7z", "-mx=9", "-si"], "2>"]];
+        }
+        else
+        {
+            $cmd=[$cmd, ">", "$archive.cpio"];
+        }
+        my $shcmd=new_shell_command({cmd => $cmd, capture_output => 1});
+        if ($shcmd->run())
+        {
+            print STDERR $shcmd->get_error_report();
+            cxerr("unable to archive the c: drive\n");
+            $lrc=1;
+            last error;
+        }
+
+        print "sunpkg: $package_name\n";
+        last;
+    }
+
+    if ($lrc and defined $pkgdir)
+    {
+        require File::Path;
+        File::Path::rmtree($pkgdir);
+    }
+    $rc=1 if ($lrc);
+}
+
+
+if ($opt_delete)
+{
+    if (!$rc or $opt_force)
+    {
+        if (!$opt_force)
+        {
+            my $msg=cxgettext("You are about to delete the " .
+                "'\%s' bottle. This operation will remove all the " .
+                "Windows applications it contains, as well as any document " .
+                "stored in that bottle's C: drive.", $ENV{CX_BOTTLE});
+            if (!$opt_uninstall)
+            {
+                $msg=cxgettext("\%s\nNote also that you should " .
+                    "always uninstall a bottle before deleting it.", $msg);
+            }
+            my $choice=cxmessage(
+                "-title", "CrossOver Warning",
+                "-buttons", "Continue:0,Abort:2",
+                "-default", "Abort",
+                "-image", "crossover",
+                "\%s", $msg);
+            if ($choice != 0)
+            {
+                if (defined $bottle_lock and !CXUtils::cxunlock($bottle_lock))
+                {
+                    cxwarn("unable to release the bottle lock\n");
+                }
+                exit(2);
+            }
+        }
+
+        # Stop all windows applications in this bottle before deleting it
+        if (!$bottle_lock)
+        {
+            my $msg=cxgettext("The applications in the \%s bottle must be shut down for it to be deleted.", $ENV{CX_BOTTLE});
+            $bottle_lock=lock_and_shutdown_bottle($ENV{CX_BOTTLE}, $opt_scope, $ENV{WINEPREFIX}, $msg);
+            exit(1) if (!$bottle_lock);
+        }
+
+        # If this is the default bottle, then make it not so
+        my $default_link=cxdirname($raw_wineprefix) . "/default";
+        if (CXUtils::same_inode($default_link, $ENV{WINEPREFIX}))
+        {
+            unlink $default_link;
+        }
+
+        # Delete the bottle
+        require File::Path;
+        if (!File::Path::rmtree($ENV{WINEPREFIX}))
+        {
+            cxerr("unable to delete '$ENV{WINEPREFIX}': $!\n");
+            $rc=1;
+        }
+
+        # And unlock it
+        if (defined $bottle_lock and !CXUtils::cxunlock($bottle_lock))
+        {
+            cxwarn("unable to release the bottle lock\n");
+        }
+    }
+    else
+    {
+        cxwarn("ignoring the --delete option due to a previous error\n");
+    }
+}
+
+
+exit($rc || 0);

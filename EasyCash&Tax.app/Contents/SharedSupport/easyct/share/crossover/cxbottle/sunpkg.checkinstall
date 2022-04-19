@@ -1,0 +1,65 @@
+#!/bin/sh
+# (c) Copyright 2006-2009. CodeWeavers, Inc.
+
+# Setup logging
+# To trigger logging, use a command of the form:
+# pkgadd/rm -v ... 2>&1 | tee pkg.log
+if echo $- | grep x >/dev/null
+then
+    echo >&2
+    echo "***** `date`" >&2
+    echo "Starting: $0 $@" >&2
+    env >&2
+    CX_LOG="-"
+    export CX_LOG
+fi
+
+CX_PACKAGE="@product_id@"
+CX_PKGINST=`pkginfo -v @package_version@ "$CX_PACKAGE*" 2>/dev/null | cut -d' ' -f2`
+[ -n "$CX_PKGINST" ] || CX_PKGINST=`pkginfo "$CX_PACKAGE*" 2>/dev/null | head -n1 | cut -d' ' -f2`
+if [ -z "$CX_PKGINST" ]
+then
+    echo "error: $CX_PACKAGE does not seem to be installed" >&2
+    exit 3
+fi
+
+CX_ROOT="$BASEDIR/$CX_PKGINST"
+CX_BOTTLE="@bottle@"
+export CX_ROOT CX_BOTTLE
+
+if [ -n "$PKG_INSTALL_ROOT" -a "$PKG_INSTALL_ROOT" != "/" ]
+then
+    echo "This package cannot be installed with 'pkgadd -R $PKG_INSTALL_ROOT'" >&2
+    exit 3
+fi
+
+if [ ! -f "$CX_ROOT/bin/cxbottle" ]
+then
+    echo "error: could not find CrossOver in '$CX_ROOT'" >&2
+    exit 3
+fi
+if [ ! -x "$CX_ROOT/bin/cxbottle" ]
+then
+    echo "error: the '$CX_ROOT/bin/cxbottle' tool is not executable!" >&2
+    exit 3
+fi
+if [ ! -x "$CX_ROOT/bin/wineprefixcreate" -o ! -f "$CX_ROOT/bin/wineprefixcreate" ]
+then
+    echo "error: managed bottles are not supported in this version of CrossOver" >&2
+    exit 3
+fi
+
+# Grab the old uuid to help with upgrades ('overwrites')
+if [ -d "$CX_ROOT/support/$CX_BOTTLE" ]
+then
+    CX_UUID=`"$CX_ROOT/bin/cxbottle" --get-uuid 2>/dev/null`
+else
+    CX_UUID=""
+fi
+
+(
+    echo "CX_UUID=$CX_UUID"
+    echo "CX_PKGINST=$CX_PKGINST"
+) >"$1"
+
+exit 0

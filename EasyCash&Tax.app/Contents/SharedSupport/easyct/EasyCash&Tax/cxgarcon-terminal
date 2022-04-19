@@ -1,0 +1,292 @@
+#!/usr/bin/perl
+# (c) Copyright 2020. CodeWeavers, Inc.
+use warnings;
+use strict;
+
+
+# Portable which(1) implementation
+sub cxwhich($$;$)
+{
+    my ($dirs, $app, $noexec)=@_;
+    if ($app =~ /^\//)
+    {
+        return $app if ((-x $app or $noexec) and -f $app);
+    }
+    elsif ($app =~ /\//)
+    {
+        require Cwd;
+        my $path=Cwd::cwd() . "/$app";
+        return $path if ((-x $path or $noexec) and -f $path);
+    }
+    else
+    {
+        foreach my $dir (split /:/, $dirs)
+        {
+            return "$dir/$app" if ($dir ne "" and (-x "$dir/$app" or $noexec) and -f "$dir/$app");
+        }
+    }
+    return undef;
+}
+
+# Fast dirname() implementation
+sub _cxdirname($)
+{
+    my ($path)=@_;
+    return undef if (!defined $path);
+    return "." if ($path !~ s!/+[^/]+/*$!!s);
+    return "/" if ($path eq "");
+    return $path;
+}
+
+# Locate where CrossOver is installed by looking for the directory
+# where the cxmenu script is located, unwinding symlinks on the way
+sub locate_cx_root(;$)
+{
+    my ($fallback)=@_;
+    my $argv0=cxwhich($ENV{PATH},$0);
+    $argv0=$0 if (!defined $argv0);
+    if ($argv0 !~ m+^/+)
+    {
+        require Cwd;
+        $argv0=Cwd::cwd() . "/$argv0";
+    }
+    my $dir=_cxdirname($argv0);
+    my $bindir=$dir;
+    $bindir =~ s%/lib$%/bin%;
+    while (!-x "$bindir/cxmenu" or !-f "$bindir/cxmenu")
+    {
+        last if (!-l $argv0);
+        $argv0=readlink($argv0);
+        $argv0="$dir/$argv0" if ($argv0 !~ m+^/+);
+        $dir=_cxdirname($argv0);
+        $bindir=$dir;
+        $bindir =~ s%/lib$%/bin%;
+    }
+    $bindir =~ s%/(?:\./)+%/%g;
+    $bindir =~ s%/\.$%%;
+    $ENV{CX_ROOT}=_cxdirname($bindir);
+    if ((!-x "$ENV{CX_ROOT}/bin/cxmenu" or !-f "$ENV{CX_ROOT}/bin/cxmenu") and
+        $fallback)
+    {
+        $ENV{CX_ROOT}=$fallback;
+    }
+    if (!-x "$ENV{CX_ROOT}/bin/cxmenu" or !-f "$ENV{CX_ROOT}/bin/cxmenu")
+    {
+        my $name0=$0;
+        $name0 =~ s+^.*/++;
+        print STDERR "$name0:error: could not find CrossOver in '$ENV{CX_ROOT}'\n";
+        exit 1;
+    }
+    return $ENV{CX_ROOT};
+}
+
+BEGIN {
+    unshift @INC, locate_cx_root() . "/lib/perl";
+}
+use CXLog;
+use CXUtils;
+
+
+#
+# Profile manipulation
+#
+
+my $autostartfile;
+
+sub read_autostart()
+{
+    $autostartfile = "$ENV{HOME}/.profile";
+
+    if (open(my $fh, "<", $autostartfile))
+    {
+        cxlog("Reading '$autostartfile'\n");
+        my @script = <$fh>;
+        close($fh);
+        return \@script;
+    }
+    elsif (-f $autostartfile)
+    {
+        cxerr("Could not open '$autostartfile' for reading: $!\n");
+        exit(1);
+    }
+    return ();
+}
+
+sub write_autostart($;$)
+{
+    my ($script, $cmd) = @_;
+
+    my $modified;
+    my $name0 = cxname0();
+    if (defined $script->[-1] and $script->[-1] =~ m%/\Q$name0\E%)
+    {
+        # Remove the old wrapper command
+        cxlog("Removing the old command: $script->[-1]");
+        pop @$script;
+        $modified = 1;
+    }
+    if (defined $script->[-1] and $script->[-1] !~ /\n$/)
+    {
+        $script->[-1] .= "\n";
+    }
+    if ($cmd)
+    {
+        my $line = shquote_string("$ENV{CX_ROOT}/bin/$name0")
+                   ." --remove ". CXUtils::argv2shcmd(@$cmd) ."\n";
+        cxlog("Adding $line");
+        push @$script, $line;
+        $modified = 1;
+    }
+
+    # If the autostart script was clean and there is no command to add,
+    # we're done here.
+    return if (!$modified);
+
+    if (!@$script)
+    {
+        if (!unlink $autostartfile and !$!{ENOENT})
+        {
+            cxerr("Could not remove empty '$autostartfile': $!\n");
+            exit(1);
+        }
+    }
+    elsif (open(my $fh, ">", "$autostartfile.new"))
+    {
+        cxlog("Updating '$autostartfile'\n");
+        print $fh @$script;
+        close($fh);
+        if (!rename "$autostartfile.new", $autostartfile)
+        {
+            cxerr("Could not put the new '$autostartfile' file in place: $!\n");
+            unlink "$autostartfile.new";
+            exit(1);
+        }
+    }
+    else
+    {
+        cxerr("Could not open '$autostartfile' for writing: $!\n");
+        exit(1);
+    }
+}
+
+
+#
+# Process command-line options
+#
+my $opt_title;
+my $opt_remove;
+my $opt_e;
+my $opt_verbose;
+my $opt_help;
+require CXOpts;
+my $cxopts = CXOpts->new(["stop_on_non_option"]);
+$cxopts->add_options(["title=s"    => \$opt_title,
+                      "remove"     => \$opt_remove,
+                      "e"          => \$opt_e,
+                      "verbose!"   => \$opt_verbose,
+                      "?|h|help"   => \$opt_help
+                     ]);
+my $err = $cxopts->parse();
+CXLog::fdopen(2) if ($opt_verbose);
+
+# If --remove was specified, remove the ~/.profile hook even
+# if there are usage errors.
+my $startup_script;
+if (defined $ENV{HOME})
+{
+    $startup_script = read_autostart();
+    write_autostart($startup_script) if ($opt_remove or $err);
+}
+# else delay reporting the error until after the usage errors
+
+# Validate the command line options
+my $usage;
+if ($err)
+{
+    cxerr("$err\n");
+    $usage=2;
+}
+elsif ($opt_help)
+{
+    $usage=0;
+}
+else
+{
+    if (!$opt_remove and !@ARGV)
+    {
+        cxerr("you must either specify the --remove option or a command to run\n");
+        $usage=2;
+    }
+}
+
+# Print usage
+if (defined $usage)
+{
+    my $name0=cxname0();
+    if ($usage)
+    {
+        cxerr("try '$name0 --help' for more information\n");
+        exit $usage;
+    }
+    print "Usage: $name0 [--title TITLE] [--verbose] [--help] [--remove]\n";
+    print "            -e COMMAND\n";
+
+    print "\n";
+    print "Tricks garcon-terminal-handler into running the specified command.\n";
+
+    print "\n";
+    print "Options:\n";
+    print "  COMMAND     The command to run in the garcon terminal emulator using\n";
+    print "              separate arguments.\n";
+    print "  --title TITLE Show the specified title in the new terminal window.\n";
+    print "  --verbose   Output more information about what is going on.\n";
+    print "  --remove    Remove the .profile hook and run the command if any. This is\n";
+    print "              mostly for $name0\'s internal use.\n";
+    print "  --help, -h  Shows this help message.\n";
+    exit 0;
+}
+
+if (!defined $ENV{HOME})
+{
+    cxerr("\$HOME is not set!\n");
+    exit(1);
+}
+my $garcon_terminal = cxwhich($ENV{PATH}, "garcon-terminal-handler");
+if (!defined $garcon_terminal)
+{
+    cxerr("garcon-terminal-handler is missing!\n");
+    exit(1);
+}
+
+my $rc;
+if ($opt_remove)
+{
+    # The command was just called to remove the autostart hook
+    return 0 if (!@ARGV);
+
+    # Show the title
+    print "#\n# $opt_title\n#\n" if (defined $opt_title);
+
+    # And run the specified command
+    $rc = cxsystem(@ARGV);
+
+    # Kill the parent process (shell) to close the window
+    kill 'KILL', getppid();
+
+    # And if that fails tell the user it's ok to close it
+    print "\n";
+    print "All done. You can close this window now...\n";
+}
+else
+{
+    # Modify the autostart script to run our command
+    unshift @ARGV, "-e";
+    unshift @ARGV, "--title", $opt_title if (defined $opt_title);
+    unshift @ARGV, "--verbose" if ($opt_verbose);
+    write_autostart($startup_script, \@ARGV);
+    $rc = cxsystem($garcon_terminal);
+}
+
+# Sanitize $rc so it is suitable for exit
+exit($rc >> 8) if ($rc >> 8);
+exit($rc);
