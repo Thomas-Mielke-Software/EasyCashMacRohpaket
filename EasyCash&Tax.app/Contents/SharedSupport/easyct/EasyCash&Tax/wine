@@ -758,7 +758,7 @@ if (defined $usage)
     {
         $cxconfig=CXBottle::get_crossover_config();
         print "Product Name: ", CXUtils::get_product_name(), "\n";
-        print "Public Version: 2.38.3\n";
+        print "Public Version: 2.38.4\n";
         foreach my $name ("Product Version", "Build Tag", "Build Timestamp")
         {
             print "$name: ";

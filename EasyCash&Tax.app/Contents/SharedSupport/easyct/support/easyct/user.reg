@@ -79,8 +79,8 @@ WINE REGISTRY Version 2
 "SmCaptionHeight"="-225"
 "SmCaptionWidth"="-225"
 
-[Control Panel\\International] 1616016722
-#time=1d71b74f85969d6
+[Control Panel\\International] 1650031312
+#time=1d850d15b995640
 "iCalendarType"="1"
 "iCountry"="1"
 "iCurrDigits"="2"
@@ -123,8 +123,8 @@ WINE REGISTRY Version 2
 "sTimeFormat"="h:mm:ss tt"
 "sYearMonth"="MMMM, yyyy"
 
-[Control Panel\\International\\Geo] 1616016722
-#time=1d71b74f8596be8
+[Control Panel\\International\\Geo] 1650031312
+#time=1d850d15b99582a
 "Nation"="244"
 
 [Control Panel\\Keyboard] 1606945972
@@ -499,18 +499,16 @@ WINE REGISTRY Version 2
 [Software\\Microsoft\\Windows\\CurrentVersion\\Run] 1606945976
 #time=1d6c8f57e618086
 
-[Software\\Microsoft\\Windows NT\\CurrentVersion\\Devices] 1616016723
-#time=1d71b74f8f045d6
+[Software\\Microsoft\\Windows NT\\CurrentVersion\\Devices] 1650031313
+#time=1d850d15c3c9350
 "Canon_MF731C_733C"="wineps.drv,CUPS:Canon_MF731C_733C"
-"DYMO_LabelWriter_4XL_codeweavers_s_Mac_mini"="wineps.drv,CUPS:DYMO_LabelWriter_4XL_codeweavers_s_Mac_mini"
 
-[Software\\Microsoft\\Windows NT\\CurrentVersion\\PrinterPorts] 1616016723
-#time=1d71b74f8f0472a
+[Software\\Microsoft\\Windows NT\\CurrentVersion\\PrinterPorts] 1650031313
+#time=1d850d15c3c9472
 "Canon_MF731C_733C"="wineps.drv,CUPS:Canon_MF731C_733C,15,45"
-"DYMO_LabelWriter_4XL_codeweavers_s_Mac_mini"="wineps.drv,CUPS:DYMO_LabelWriter_4XL_codeweavers_s_Mac_mini,15,45"
 
-[Software\\Microsoft\\Windows NT\\CurrentVersion\\Windows] 1616016723
-#time=1d71b74f8efee88
+[Software\\Microsoft\\Windows NT\\CurrentVersion\\Windows] 1650031313
+#time=1d850d15c3c3d9c
 "device"="Canon_MF731C_733C,wineps.drv,CUPS:Canon_MF731C_733C"
 
 [Software\\Netscape\\Netscape Navigator\\Main] 1606945978
@@ -561,8 +559,8 @@ WINE REGISTRY Version 2
 "RelayExclude"="ntdll.RtlEnterCriticalSection;ntdll.RtlTryEnterCriticalSection;ntdll.RtlLeaveCriticalSection;kernel32.48;kernel32.49;kernel32.94;kernel32.95;kernel32.96;kernel32.97;kernel32.98;kernel32.TlsGetValue;kernel32.TlsSetValue;kernel32.FlsGetValue;kernel32.FlsSetValue;kernel32.SetLastError"
 "RelayFromExclude"="winex11.drv;winemac.drv;user32;gdi32;advapi32;kernel32"
 
-[Software\\Wine\\DllOverrides] 1616016725
-#time=1d71b74fa277a32
+[Software\\Wine\\DllOverrides] 1650031315
+#time=1d850d15d538032
 "*autorun.exe"="native,builtin"
 "*ctfmon.exe"="builtin"
 "*ddhelp.exe"="builtin"
@@ -630,13 +628,13 @@ WINE REGISTRY Version 2
 "wintrust"="native, builtin"
 "wscript.exe"="native, builtin"
 
-[Software\\Wine\\Fonts] 1616016723
-#time=1d71b74f8a17b4a
+[Software\\Wine\\Fonts] 1650031312
+#time=1d850d15be638b6
 "Codepages"="1252,437"
 "LogPixels"=dword:00000060
 
-[Software\\Wine\\Fonts\\External Fonts] 1616016723
-#time=1d71b74f8a49244
+[Software\\Wine\\Fonts\\External Fonts] 1650031312
+#time=1d850d15be9daac
 "@Apple SD Gothic Neo Regular (TrueType)"="Z:\\System\\Library\\Fonts\\AppleSDGothicNeo.ttc"
 "@Arial Unicode MS (TrueType)"="Z:\\Library\\Fonts\\Arial Unicode.ttf"
 "@Brush Script MT Italic (TrueType)"="Z:\\Library\\Fonts\\Brush Script.ttf"

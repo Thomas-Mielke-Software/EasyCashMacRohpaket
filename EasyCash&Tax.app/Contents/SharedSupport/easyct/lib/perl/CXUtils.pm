@@ -109,7 +109,7 @@ sub get_product_name()
 
 sub get_product_version()
 {
-    return "20.0.0.33203local";
+    return "20.0.4.33265local";
 }
 
 sub get_std_icon($)

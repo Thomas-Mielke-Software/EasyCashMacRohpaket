@@ -3,13 +3,13 @@
 <plist version="1.0">
 <dict>
 	<key>BuildMachineOSBuild</key>
-	<string>18G3020</string>
+	<string>18G8022</string>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>English</string>
 	<key>CFBundleExecutable</key>
 	<string>EasyCash&amp;Tax</string>
 	<key>CFBundleGetInfoString</key>
-	<string>2.38.3, Copyright © 2020 Thomas Mielke, Inc.</string>
+	<string>2.38.4, Copyright © 2020 Thomas Mielke, Inc.</string>
 	<key>CFBundleHelpBookFolder</key>
 	<string>EasyCash&amp;Tax Help</string>
 	<key>CFBundleHelpBookName</key>
@@ -25,7 +25,7 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>2.38.3</string>
+	<string>2.38.4</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleSupportedPlatforms</key>
@@ -33,7 +33,7 @@
 		<string>MacOSX</string>
 	</array>
 	<key>CFBundleVersion</key>
-	<string>2.38.3</string>
+	<string>2.38.4</string>
 	<key>DTCompiler</key>
 	<string>com.apple.compilers.llvm.clang.1_0</string>
 	<key>DTPlatformBuild</key>
